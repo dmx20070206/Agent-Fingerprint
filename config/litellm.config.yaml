@@ -1,0 +1,31 @@
+model_list:
+  # chat-gpt
+  - model_name: chat-gpt
+    litellm_params:
+      model: openai/gpt-5.6-sol
+      api_base: https://bmapi.020212.xyz/v1
+      api_key: os.environ/RELAY_OPENAI_API_KEY
+  # claude
+  - model_name: claude
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_base: https://bmapi.020212.xyz
+      api_key: os.environ/RELAY_ANTHROPIC_API_KEY
+  # deepseek-chat
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+  # gemini
+  - model_name: gemini
+    litellm_params:
+      model: openai/gemini-2.5-flash
+      api_base: https://bmapi.020212.xyz/v1
+      api_key: os.environ/RELAY_GEMINI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+  callbacks: gateway.latency_callback.proxy_handler_instance

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>延迟与 Cookie</title></head>
+<body><h1>延迟与 Cookie</h1><p id="status">初始化中</p>
+<script>
+  setTimeout(() => { document.cookie = 'fixture=ready; SameSite=Lax'; }, 250);
+  const timer = setInterval(() => {
+    if (document.cookie.includes('fixture=ready')) {
+      document.getElementById('status').textContent = '准备完成';
+      clearInterval(timer);
+    }
+  }, 100);
+</script></body></html>

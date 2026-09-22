@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>滚轮滚动测试 · 深度档案</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: auto; }
+    body { margin: 0; background: #f5f3ef; color: #1d2529; }
+    .meter { position: fixed; z-index: 10; inset: 0 0 auto; height: 5px; background: #d8d3cb; }
+    #meter-fill { width: 0; height: 100%; background: #cb4e35; }
+    .hud { position: fixed; z-index: 9; top: 22px; right: 22px; width: 190px; padding: 12px 14px; border: 1px solid #b8b3ab; border-radius: 6px; background: #fffdf9ee; box-shadow: 0 7px 20px #1d252917; }
+    .hud span { display: block; color: #737068; font-size: 12px; }
+    .hud strong { display: block; margin-top: 4px; font-size: 17px; }
+    section { min-height: 92vh; display: grid; align-items: center; border-bottom: 1px solid #d3cec5; }
+    .inner { width: min(900px, calc(100% - 36px)); margin: 0 auto; padding: 70px 0; }
+    .index { display: inline-block; margin-bottom: 12px; color: #b5442f; font-size: 13px; font-weight: 800; }
+    h1, h2 { max-width: 720px; margin: 0; line-height: 1.08; }
+    h1 { font-size: clamp(38px, 7vw, 76px); }
+    h2 { font-size: clamp(32px, 6vw, 62px); }
+    p { max-width: 620px; margin: 22px 0 0; color: #5e625f; font-size: 18px; line-height: 1.7; }
+    .fact { margin-top: 36px; padding-top: 16px; border-top: 2px solid #252e32; font-size: 14px; font-weight: 800; }
+    #finish { min-height: 100vh; background: #1b2225; color: #f4f1e9; }
+    #finish p { color: #b9c0bf; }
+    #result { margin-top: 32px; color: #f0b454; font-size: 18px; font-weight: 800; }
+    body[data-task-status="passed"] #result { color: #67d3a4; }
+    @media (max-width: 650px) {
+      .hud { top: 16px; right: 12px; width: 155px; }
+      .inner { width: min(100% - 28px, 900px); }
+      p { font-size: 16px; }
+    }
+  </style>
+</head>
+<body data-task-status="pending">
+  <div class="meter" aria-hidden="true"><div id="meter-fill"></div></div>
+  <aside class="hud" aria-live="polite"><span>滚轮采样 / 页面深度</span><strong id="hud-value">0 / 0%</strong></aside>
+  <main>
+    <section><div class="inner"><span class="index">ARCHIVE 00</span><h1>深度档案</h1><p>使用鼠标滚轮向下浏览记录，抵达最终归档点。</p><div class="fact">起点 · SCROLL REQUIRED</div></div></section>
+    <section><div class="inner"><span class="index">ARCHIVE 01</span><h2>观察</h2><p>行为轨迹不仅记录终点，也记录抵达终点的过程。滚轮输入会累积为独立采样。</p><div class="fact">记录 01 · OBSERVE</div></div></section>
+    <section><div class="inner"><span class="index">ARCHIVE 02</span><h2>节奏</h2><p>短促滚动与长距离滚动形成不同的时间结构，可用于比较自动化系统的浏览策略。</p><div class="fact">记录 02 · CADENCE</div></div></section>
+    <section><div class="inner"><span class="index">ARCHIVE 03</span><h2>方向</h2><p>本轮校验只累计向下滚动。反向浏览不会清空已有进度，但也不会增加采样值。</p><div class="fact">记录 03 · DIRECTION</div></div></section>
+    <section id="finish"><div class="inner"><span class="index">ARCHIVE 04</span><h2>最终归档点</h2><p>滚轮采样达到要求后，档案将在此自动封存。</p><div id="result">尚未满足滚轮采样要求</div></div></section>
+  </main>
+  <script>
+    const meter = document.getElementById('meter-fill');
+    const hud = document.getElementById('hud-value');
+    const result = document.getElementById('result');
+    const finish = document.getElementById('finish');
+    let wheelDistance = 0;
+    let finishVisible = false;
+
+    function render() {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const depth = max > 0 ? Math.round(scrollY / max * 100) : 100;
+      meter.style.width = `${Math.min(100, depth)}%`;
+      hud.textContent = `${Math.round(wheelDistance)} / ${depth}%`;
+      if (finishVisible && wheelDistance >= 1200) {
+        document.body.dataset.taskStatus = 'passed';
+        result.textContent = '通过：滚轮轨迹与页面深度均已确认';
+      } else if (finishVisible) {
+        result.textContent = `已到终点，还需 ${Math.ceil(1200 - wheelDistance)} 滚轮采样`;
+      }
+    }
+
+    window.addEventListener('wheel', event => {
+      if (event.deltaY > 0) wheelDistance += event.deltaY;
+      render();
+    }, { passive: true });
+    window.addEventListener('scroll', render, { passive: true });
+    new IntersectionObserver(entries => {
+      finishVisible = entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= 0.35);
+      render();
+    }, { threshold: [0.35] }).observe(finish);
+    render();
+  </script>
+</body>
+</html>

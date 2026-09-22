@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>键盘打字测试</title>
+<style>body{font-family:system-ui;margin:32px}textarea{display:block;width:min(760px,90vw);height:180px;padding:16px;font:20px monospace}#result{font-weight:700}</style></head>
+<body data-task-status="pending"><h1>转录终端</h1><pre>Agent Fingerprint
+MOVE CLICK TYPE SCROLL</pre><textarea autofocus aria-label="转录输入区"></textarea><p id="result">等待输入</p>
+<script>
+  const expected = 'Agent Fingerprint\nMOVE CLICK TYPE SCROLL';
+  document.querySelector('textarea').addEventListener('input', event => {
+    if (event.target.value === expected) { document.body.dataset.taskStatus = 'passed'; document.getElementById('result').textContent = '通过：转录完全一致'; }
+  });
+</script></body></html>

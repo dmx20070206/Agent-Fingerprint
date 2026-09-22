@@ -1,0 +1,4 @@
+# Skyvern runs in a separate environment because its browser and LLM stack is
+# intentionally isolated from the orchestrator. Use the vendored checkout so
+# the adapter and SDK stay on the same revision.
+-e ./lib/skyvern[local]

@@ -1,0 +1,15 @@
+# Collected traces, PCAPs, screenshots and provider logs can contain secrets.
+data/
+*.pcap
+*.mitm
+gateway_events.jsonl
+
+# Local Python/Conda/editor files.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+.mypy_cache/
+.ruff_cache/
+temp/

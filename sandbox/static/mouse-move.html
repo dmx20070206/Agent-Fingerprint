@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>鼠标移动测试 · 航迹校准</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #f3f5f7; color: #17202a; }
+    .shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 36px; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+    .eyebrow { margin: 0 0 6px; color: #9a4f18; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(25px, 4vw, 38px); line-height: 1.1; }
+    .status { min-width: 190px; text-align: right; }
+    .status strong { display: block; font-size: 20px; }
+    .status span { color: #65717e; font-size: 13px; }
+    .board { position: relative; height: min(68vh, 620px); min-height: 470px; overflow: hidden; border: 1px solid #cbd2d9; border-radius: 8px; background-color: #fff; background-image: linear-gradient(#edf0f2 1px, transparent 1px), linear-gradient(90deg, #edf0f2 1px, transparent 1px); background-size: 32px 32px; }
+    .route { position: absolute; inset: 0; pointer-events: none; }
+    .route path { fill: none; stroke: #aeb8c2; stroke-width: 3; stroke-dasharray: 8 9; }
+    .gate { position: absolute; display: grid; place-items: center; width: 92px; height: 92px; border: 2px solid #6c7782; border-radius: 50%; background: #fff; box-shadow: 0 4px 14px #17202a14; transition: border-color 140ms, background 140ms, transform 140ms; }
+    .gate b { font-size: 24px; }
+    .gate small { color: #697582; font-weight: 700; }
+    .gate.active { border-color: #c35d13; background: #fff4e8; transform: scale(1.08); }
+    .gate.done { border-color: #21835a; background: #eaf8f1; }
+    .gate.wrong { border-color: #bb2f36; background: #fff0f1; }
+    #gate-1 { left: 6%; top: 10%; } #gate-2 { left: 40%; top: 7%; } #gate-3 { right: 7%; top: 34%; }
+    #gate-4 { left: 45%; bottom: 8%; } #gate-5 { left: 9%; bottom: 13%; }
+    .legend { display: flex; justify-content: space-between; gap: 16px; margin-top: 14px; color: #5d6873; font-size: 14px; }
+    #result { font-weight: 800; color: #17202a; }
+    body[data-task-status="passed"] #result { color: #18734d; }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 20px, 1080px); padding-top: 20px; }
+      header { align-items: start; flex-direction: column; gap: 10px; }
+      .status { min-width: 0; text-align: left; }
+      .board { min-height: 520px; }
+      .gate { width: 78px; height: 78px; }
+      #gate-1 { left: 4%; } #gate-2 { left: 38%; } #gate-3 { right: 4%; } #gate-4 { left: 42%; } #gate-5 { left: 5%; }
+    }
+  </style>
+</head>
+<body data-task-status="pending">
+  <main class="shell">
+    <header>
+      <div><p class="eyebrow">Pointer Lab / 01</p><h1>航迹校准</h1></div>
+      <div class="status" aria-live="polite"><strong id="progress">0 / 5</strong><span>当前目标：航点 1</span></div>
+    </header>
+    <section class="board" aria-label="按编号移动鼠标经过五个航点">
+      <svg class="route" viewBox="0 0 1080 620" preserveAspectRatio="none" aria-hidden="true"><path d="M110 110 L480 95 L950 265 L540 540 L140 500"></path></svg>
+      <div class="gate active" id="gate-1" data-step="1"><b>1</b><small>START</small></div>
+      <div class="gate" id="gate-2" data-step="2"><b>2</b><small>NORTH</small></div>
+      <div class="gate" id="gate-3" data-step="3"><b>3</b><small>EAST</small></div>
+      <div class="gate" id="gate-4" data-step="4"><b>4</b><small>SOUTH</small></div>
+      <div class="gate" id="gate-5" data-step="5"><b>5</b><small>FINISH</small></div>
+    </section>
+    <div class="legend"><span>移动指针依次穿过 1 → 2 → 3 → 4 → 5</span><span id="result">等待校准</span></div>
+  </main>
+  <script>
+    const gates = [...document.querySelectorAll('.gate')];
+    const progress = document.getElementById('progress');
+    const statusText = document.querySelector('.status span');
+    const result = document.getElementById('result');
+    let expected = 1;
+
+    function resetRoute(gate) {
+      gates.forEach(item => item.classList.remove('done', 'active', 'wrong'));
+      gate.classList.add('wrong');
+      expected = 1;
+      progress.textContent = '0 / 5';
+      statusText.textContent = '顺序错误，当前目标：航点 1';
+      result.textContent = '航迹已重置';
+      window.setTimeout(() => {
+        gate.classList.remove('wrong');
+        gates[0].classList.add('active');
+      }, 260);
+    }
+
+    gates.forEach(gate => gate.addEventListener('pointerenter', event => {
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      const step = Number(gate.dataset.step);
+      if (step < expected || document.body.dataset.taskStatus === 'passed') return;
+      if (step !== expected) return resetRoute(gate);
+      gate.classList.remove('active');
+      gate.classList.add('done');
+      expected += 1;
+      progress.textContent = `${step} / 5`;
+      if (step === 5) {
+        document.body.dataset.taskStatus = 'passed';
+        statusText.textContent = '校准完成';
+        result.textContent = '通过：鼠标航迹有效';
+      } else {
+        gates[step].classList.add('active');
+        statusText.textContent = `当前目标：航点 ${expected}`;
+        result.textContent = `航点 ${step} 已记录`;
+      }
+    }));
+  </script>
+</body>
+</html>

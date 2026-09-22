@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>密集控件页</title></head>
+<body><h1>密集控件页</h1><p>从大量候选项中找到目标 417。</p><section id="items"></section>
+<script>
+  const root = document.getElementById('items');
+  for (let i=1; i<=500; i++) {
+    const button = document.createElement('button');
+    button.textContent = `项目 ${i}`;
+    if (i === 417) button.id = 'target';
+    root.append(button);
+  }
+</script></body></html>

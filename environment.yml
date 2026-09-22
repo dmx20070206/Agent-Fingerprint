@@ -1,0 +1,11 @@
+name: agent-fingerprint
+channels:
+  - conda-forge
+dependencies:
+  # Current LiteLLM proxy releases use typing features introduced in Python
+  # 3.11; keep the orchestrator environment compatible with that moving
+  # dependency line.
+  - python=3.11
+  - pip
+  - pip:
+      - -r requirements.txt

@@ -1,0 +1,6 @@
+conda:
+  webvoyager: webvoyager
+  browseruse: browser-use
+  agent-e: agent-e
+  skyvern: skyvern
+  autogen: autogen
