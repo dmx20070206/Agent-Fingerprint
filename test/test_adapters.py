@@ -6,12 +6,16 @@ would require Conda environments, browser binaries, and an LLM API key.
 
 from __future__ import annotations
 
+import ast
+import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +40,71 @@ class _FakeAdapter(BaseAgentAdapter):
 
 
 class AdapterTest(unittest.TestCase):
+    def test_browseruse_early_zero_exit_leaves_incomplete_result(self) -> None:
+        main = next(node for node in ast.parse(BROWSERUSE_RUNNER).body
+                    if isinstance(node, ast.AsyncFunctionDef) and node.name == "main")
+
+        def interrupted_agent(**kwargs):
+            raise SystemExit(0)
+
+        namespace = {
+            "os": os, "json": json, "Path": Path,
+            "make_browser": lambda proxy: None,
+            "make_llm": lambda *args: None,
+            "make_tools": lambda: None,
+            "Agent": interrupted_agent,
+        }
+        exec(compile(ast.Module(body=[main], type_ignores=[]), "runner", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "AGENT_OUTPUT_DIR": directory,
+            "AGENT_TASK_URL": "http://example.test",
+            "AGENT_TASK_PROMPT": "Complete the form",
+        }):
+            with self.assertRaises(SystemExit) as raised:
+                asyncio.run(namespace["main"]())
+            self.assertEqual(raised.exception.code, 0)
+            result = json.loads((Path(directory) / "result.json").read_text())
+            self.assertEqual(result, {"task_success": False, "task_status": "incomplete"})
+
+    def test_browseruse_proxy_normalizes_prose_without_disabling_openai_schema(self) -> None:
+        names = {"_extract_json_value", "_normalizing_chat_openai_class", "make_llm"}
+        nodes = [node for node in ast.parse(BROWSERUSE_RUNNER).body
+                 if isinstance(node, ast.FunctionDef) and node.name in names]
+        namespace = {"json": json}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "runner", "exec"), namespace)
+
+        class FakeChat:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            async def ainvoke(self, messages, output_format=None, **kwargs):
+                self.schema = output_format.model_json_schema()
+                return output_format.model_validate_json(
+                    'UA800 is selected.\n```json\n{"action":[{"click":{"index":13}}]}\n```'
+                )
+
+        class Output:
+            @classmethod
+            def model_json_schema(cls):
+                return {"type": "object", "required": ["action"]}
+
+            @classmethod
+            def model_validate(cls, value):
+                if not isinstance(value.get("action"), list):
+                    raise ValueError("missing actions")
+                return value
+
+        module = types.ModuleType("browser_use")
+        module.ChatOpenAI = FakeChat
+        with patch.dict(sys.modules, {"browser_use": module}):
+            llm = namespace["make_llm"]("openai", "chat-gpt", "http://proxy/v1", "test")
+        result = asyncio.run(llm.ainvoke([], Output))
+        self.assertEqual(result, {"action": [{"click": {"index": 13}}]})
+        self.assertEqual(llm.schema, Output.model_json_schema())
+        self.assertNotIn("dont_force_structured_output", llm.kwargs)
+        with self.assertRaises(ValueError):
+            namespace["_extract_json_value"]('Prose with incomplete JSON: {"action":')
+
     def test_browseruse_keeps_native_click_but_blocks_dom_evaluation(self) -> None:
         self.assertIn('Tools(exclude_actions=["evaluate"])', BROWSERUSE_RUNNER)
         self.assertNotIn('Tools(exclude_actions=["evaluate", "click"])', BROWSERUSE_RUNNER)
@@ -56,6 +125,27 @@ class AdapterTest(unittest.TestCase):
         self.assertIn("class FormWebSurfer(MultimodalWebSurfer):", AUTOGEN_RUNNER)
         self.assertIn("await target.select_option(value=option_value)", AUTOGEN_RUNNER)
 
+    def test_autogen_select_hint_accepts_upstream_spacing(self) -> None:
+        class Surfer:
+            def _format_target_list(self, ids, rects):
+                return [
+                    '{"id": 60, "role": "combobox", "tools": ["click", "hover"] }',
+                    '{"id": 61, "role": "combobox", "tools": ["click","hover"]}',
+                    '{"id": 62, "role": "button", "tools": ["click", "hover"] }',
+                ]
+
+        tree = ast.parse(AUTOGEN_RUNNER)
+        surfer = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)
+                      and n.name == "FormWebSurfer")
+        method = next(n for n in surfer.body if isinstance(n, ast.FunctionDef)
+                      and n.name == "_format_target_list")
+        surfer.body = [method]
+        namespace = {"MultimodalWebSurfer": Surfer, "re": re}
+        exec(compile(ast.Module(body=[surfer], type_ignores=[]), "runner", "exec"), namespace)
+        targets = [json.loads(s) for s in namespace[surfer.name]()._format_target_list([], {})]
+        self.assertEqual([t["tools"] for t in targets],
+                         [["select_option"], ["select_option"], ["click", "hover"]])
+
     def test_autogen_normalizes_assistant_ending_history_for_gemini(self) -> None:
         self.assertIn("def _gemini_compatible_messages(messages):", AUTOGEN_RUNNER)
         self.assertIn(
@@ -70,6 +160,34 @@ class AdapterTest(unittest.TestCase):
     def test_autogen_gemini_history_conversion_is_model_specific(self) -> None:
         self.assertIn("if _is_gemini_model(capability_model or client_kwargs", AUTOGEN_RUNNER)
         self.assertIn("else OpenAIChatCompletionClient", AUTOGEN_RUNNER)
+
+    def test_autogen_gateway_puts_observation_after_assistant_without_mutation(self) -> None:
+        class AssistantMessage:
+            pass
+
+        class UserMessage:
+            pass
+
+        class Client:
+            async def create(self, messages, **kwargs):
+                return messages, kwargs
+
+        tree = ast.parse(AUTOGEN_RUNNER)
+        helper = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                      and n.name == "_gemini_compatible_messages")
+        client = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)
+                      and n.name == "GatewayCompatibleOpenAIChatCompletionClient")
+        namespace = {"AssistantMessage": AssistantMessage, "UserMessage": UserMessage,
+                     "OpenAIChatCompletionClient": Client}
+        exec(compile(ast.Module(body=[helper, client], type_ignores=[]), "runner", "exec"), namespace)
+        observation, previous = UserMessage(), AssistantMessage()
+        original = [observation, previous]
+        result, kwargs = asyncio.run(namespace[client.name]().create(original, tools=["click"]))
+        self.assertEqual(result, [previous, observation])
+        self.assertEqual(original, [observation, previous])
+        self.assertEqual(kwargs, {"tools": ["click"]})
+        unchanged, _ = asyncio.run(namespace[client.name]().create([previous, observation]))
+        self.assertEqual(unchanged, [previous, observation])
 
     def test_autogen_text_models_receive_browser_tools(self) -> None:
         self.assertIn("class TextBrowser:", AUTOGEN_RUNNER)

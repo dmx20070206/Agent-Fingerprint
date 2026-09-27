@@ -8,4 +8,4 @@ python orchestrator.py \
   --task-file tasks/flights.jsonl \
   --run-id browseruse_chat_gpt_flights \
   --no-network-probe \
-  --timeout 900
+  --timeout "${BROWSER_USE_FLIGHTS_TIMEOUT:-1800}"

@@ -179,8 +179,10 @@ def make_llm(
             kwargs["add_schema_to_system_prompt"] = True
         if api_key:
             kwargs["api_key"] = api_key
-        if needs_compatibility:
-            ChatOpenAI = _normalizing_chat_openai_class(ChatOpenAI)
+        # Even OpenAI-compatible routes can prepend prose to otherwise valid
+        # structured JSON. Keep their native schema request, but normalize the
+        # response before validation just as for the other proxy providers.
+        ChatOpenAI = _normalizing_chat_openai_class(ChatOpenAI)
         return ChatOpenAI(**kwargs)
     if provider == "browser_use":
         from browser_use import ChatBrowserUse
@@ -345,6 +347,12 @@ async def main():
     url = os.environ["AGENT_TASK_URL"]
     prompt = os.environ["AGENT_TASK_PROMPT"]
     output_dir = Path(os.environ["AGENT_OUTPUT_DIR"])
+    # Browser-use installs signal handlers which may exit zero before run()
+    # returns. Leave a failed/incomplete marker until a real verdict is saved.
+    (output_dir / "result.json").write_text(
+        json.dumps({"task_success": False, "task_status": "incomplete"}),
+        encoding="utf-8",
+    )
     provider = os.environ.get("BROWSER_USE_LLM_PROVIDER", "browser_use")
     model = os.environ.get("BROWSER_USE_LLM_MODEL") or None
     upstream_model = os.environ.get("BROWSER_USE_UPSTREAM_MODEL") or None
@@ -371,6 +379,9 @@ async def main():
             "task": task,
             "llm": make_llm(provider, model, api_base, api_key, upstream_model),
             "tools": make_tools(),
+            # The proxy can take longer than browser-use's 75-second default.
+            # The parent process still enforces the total task timeout.
+            "llm_timeout": float(os.environ.get("BROWSER_USE_LLM_TIMEOUT", "180")),
         }
         if browser is not None:
             agent_kwargs["browser"] = browser
@@ -378,7 +389,7 @@ async def main():
         # These benchmark tasks are short (normally 3-8 steps). Keep a finite
         # default so malformed structured responses cannot turn one sample
         # into a 100-step retry loop; callers can still override it explicitly.
-        kwargs = {"max_steps": int(max_steps) if max_steps else 25}
+        kwargs = {"max_steps": int(max_steps) if max_steps else 100}
         history = await agent.run(**kwargs)
         # Browser-use exposes an explicit task-level verdict.  A zero exit
         # code only means that its Python loop terminated, so preserve this

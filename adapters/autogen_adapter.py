@@ -111,6 +111,12 @@ if _NEW_API:
     class GeminiCompatibleOpenAIChatCompletionClient(OpenAIChatCompletionClient):
         async def create(self, messages, **kwargs):
             return await super().create(_gemini_compatible_messages(messages), **kwargs)
+
+    class GatewayCompatibleOpenAIChatCompletionClient(OpenAIChatCompletionClient):
+        # OpenAI-compatible relays can also reject assistant-prefill requests.
+        # Keep the latest browser observation after the prior assistant turn.
+        async def create(self, messages, **kwargs):
+            return await super().create(_gemini_compatible_messages(messages), **kwargs)
 else:
     GeminiCompatibleOpenAIChatCompletionClient = None
 
@@ -150,6 +156,8 @@ def _make_client(cfg, vision=None, capability_model=None):
         if _is_gemini_model(capability_model or client_kwargs["model"])
         else OpenAIChatCompletionClient
     )
+    if client_class is OpenAIChatCompletionClient and client_kwargs.get("base_url"):
+        client_class = GatewayCompatibleOpenAIChatCompletionClient
     return client_class(**client_kwargs)
 
 def _parse_optional_bool(value):
@@ -229,9 +237,10 @@ if MultimodalWebSurfer is not None:
         def _format_target_list(self, ids, rects):
             targets = super()._format_target_list(ids, rects)
             return [
-                target.replace(
-                    '"role": "combobox", "tools": ["click","hover"]',
+                re.sub(
+                    r'"role":\s*"combobox",\s*"tools":\s*\["click",\s*"hover"\]',
                     '"role": "combobox", "tools": ["select_option"]',
+                    target,
                 )
                 for target in targets
             ]
@@ -332,6 +341,8 @@ async def _run_web_surfer(task, cfg, max_turns, debug_dir, headless, capability_
             # Exclude the initial user task echo.  In particular, completion
             # phrases in the prompt must not count as evidence of success.
             if text_content and getattr(msg, "source", None) == agent.name:
+                if text_content.startswith("Web surfing error:"):
+                    raise RuntimeError(text_content)
                 agent_lines.append(text_content)
     finally:
         await agent.close()
@@ -601,7 +612,7 @@ async def main():
     explicit_vision = _parse_optional_bool(os.environ.get("AUTOGEN_VISION"))
     api_base = os.environ.get("AUTOGEN_API_BASE") or None
     api_key = os.environ.get("AUTOGEN_API_KEY") or None
-    max_turns = int(os.environ.get("AUTOGEN_MAX_TURNS", "15"))
+    max_turns = int(os.environ.get("AUTOGEN_MAX_TURNS", "100"))
     headless = os.environ.get("AUTOGEN_HEADLESS", "1") != "0"
     debug_dir = output_dir / "screenshots" if os.environ.get("AUTOGEN_SCREENSHOTS") else None
     task = f"Navigate to {url} and complete the following task:\n{prompt}"
@@ -656,7 +667,7 @@ class AutoGenAdapter(BaseAgentAdapter):
         api_base=None,
         api_key=None,
         api_key_env="RELAY_OPENAI_API_KEY",
-        max_turns=15,
+        max_turns=100,
         headless=True,
         save_screenshots=False,
         trace=False,

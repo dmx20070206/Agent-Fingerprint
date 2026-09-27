@@ -8,5 +8,7 @@ python orchestrator.py \
   --task-file tasks/flights.jsonl \
   --run-id autogen_chat_gpt_flights \
   --max-steps 50 \
+  --autogen-screenshots \
+  --autogen-trace \
   --no-network-probe \
-  --timeout 900
+  --timeout "${AUTOGEN_FLIGHTS_TIMEOUT:-3600}"

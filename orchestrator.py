@@ -120,9 +120,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--capture-startup-timeout", type=float, default=10.0)
 
     parser.add_argument("--timeout", type=float, help="Agent wall-clock timeout in seconds")
-    parser.add_argument("--max-iter", type=int, default=15, help="WebVoyager iteration limit")
+    parser.add_argument("--max-iter", type=int, default=100, help="WebVoyager iteration limit")
     parser.add_argument(
         "--max-steps", type=int,
+        default=100,
         help="Framework step/turn limit for Browser-use, Skyvern, AutoGen, and Agent-E",
     )
     parser.add_argument(

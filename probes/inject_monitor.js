@@ -40,7 +40,6 @@
   var SCROLL_THROTTLE_MS = 100;
   var events = [];
   var listeners = [];
-  var mutationObserver = null;
   var scrollTimer = null;
   var pointerMoveTimer = null;
   var pendingPointerMove = null;
@@ -311,6 +310,11 @@
   }
 
   function record(type, data) {
+    // Pointer input is treated as mouse input by the browser fingerprint
+    // schema.  Keep one canonical vocabulary in the raw trace as well.
+    if (type === "pointermove") type = "mousemove";
+    else if (type === "pointerdown") type = "mousedown";
+    else if (type === "pointerup" || type === "pointercancel") type = "mouseup";
     var stamp = now();
     var event = {
       seq: ++sequence,
@@ -545,7 +549,7 @@
     if (pointerMoveTimer !== null) return;
     pointerMoveTimer = global.setTimeout(function () {
       pointerMoveTimer = null;
-      if (pendingPointerMove) record("pointermove", pendingPointerMove);
+      if (pendingPointerMove) record("mousemove", pendingPointerMove);
       pendingPointerMove = null;
     }, POINTER_MOVE_THROTTLE_MS);
   }
@@ -556,25 +560,6 @@
   function onMouseMove(event) {
     if (!active) return;
     onPointerMove(event);
-  }
-
-  function onMutation(mutations) {
-    if (!active) return;
-    // The startup gate is instrumentation, not page behavior. Exclude its
-    // insertion/removal from the page's mutation fingerprint.
-    mutations = mutations.filter(function (mutation) {
-      var changed = Array.prototype.slice.call(mutation.addedNodes || [])
-        .concat(Array.prototype.slice.call(mutation.removedNodes || []));
-      return !changed.some(function (node) {
-        return node === interactionGate || (node && node.id === "agent-fingerprint-interaction-gate");
-      });
-    });
-    if (!mutations.length) return;
-    record("mutation", {
-      count: mutations.length,
-      added_nodes: mutations.reduce(function (n, mutation) { return n + mutation.addedNodes.length; }, 0),
-      removed_nodes: mutations.reduce(function (n, mutation) { return n + mutation.removedNodes.length; }, 0)
-    });
   }
 
   function start() {
@@ -610,10 +595,9 @@
       document.addEventListener("mousemove", onMouseMove, true);
       listeners.push({ target: document, name: "mousemove", listener: onMouseMove });
     }
-    if (global.MutationObserver) {
-      mutationObserver = new MutationObserver(onMutation);
-      mutationObserver.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true });
-    }
+    // DOM mutation events are intentionally not part of the behavioral trace.
+    // Do not install a MutationObserver: page/framework rendering would
+    // otherwise dominate the interaction signal.
     record("monitor_start", { static_fingerprint: staticFingerprint() });
     if (controlTimer !== null) global.clearInterval(controlTimer);
     controlTimer = global.setInterval(pollControl, CONTROL_POLL_MS);
@@ -634,15 +618,11 @@
     if (pointerMoveTimer !== null) {
       global.clearTimeout(pointerMoveTimer);
       pointerMoveTimer = null;
-      if (pendingPointerMove) record("pointermove", pendingPointerMove);
+      if (pendingPointerMove) record("mousemove", pendingPointerMove);
       pendingPointerMove = null;
     }
     listeners.forEach(function (item) { item.target.removeEventListener(item.name, item.listener, true); });
     listeners = [];
-    if (mutationObserver) {
-      mutationObserver.disconnect();
-      mutationObserver = null;
-    }
     record("monitor_stop");
     active = false;
     finalizing = true;
@@ -666,6 +646,11 @@
     // Navigation often happens before the 250 ms timer fires.  Beacon is
     // specifically designed to survive document teardown and is preferable
     // to waiting on a normal fetch during unload.
+    var root = document.documentElement;
+    var maxScroll = root ? Math.max(0, (root.scrollHeight || 0) - (global.innerHeight || 0)) : 0;
+    record("beforeunload", {
+      scroll_pct: maxScroll > 0 ? Math.max(0, Math.min(1, (global.scrollY || 0) / maxScroll)) * 100 : null
+    });
     stop(true);
   }
 

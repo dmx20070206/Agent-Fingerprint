@@ -1,9 +1,0 @@
-<!doctype html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"><title>滚轮滚动测试</title>
-<style>body{font-family:system-ui;margin:0}section{min-height:100vh;display:grid;place-items:center;border-bottom:1px solid #ccc}#result{font-weight:700}</style></head>
-<body data-task-status="pending"><section><h1>深度档案</h1></section><section><h2>观察</h2></section><section><h2>节奏</h2></section><section id="finish"><div><h2>最终归档点</h2><p id="result">继续使用滚轮</p></div></section>
-<script>
-  let wheelDistance = 0;
-  window.addEventListener('wheel', event => { if (event.deltaY > 0) wheelDistance += event.deltaY; if (wheelDistance >= 800 && scrollY + innerHeight >= document.documentElement.scrollHeight - 20) { document.body.dataset.taskStatus = 'passed'; document.getElementById('result').textContent = '通过：滚轮轨迹与页面深度均已确认'; } }, {passive:true});
-</script></body></html>

@@ -123,10 +123,10 @@ stop_agente_service() {
 
         local attempt
         for attempt in {1..50}; do
-            kill -0 "$AGENTE_SERVICE_PID" 2>/dev/null || break
+            kill -0 -- "-$AGENTE_SERVICE_PID" 2>/dev/null || break
             sleep 0.1
         done
-        if kill -0 "$AGENTE_SERVICE_PID" 2>/dev/null; then
+        if kill -0 -- "-$AGENTE_SERVICE_PID" 2>/dev/null; then
             kill -KILL -- "-$AGENTE_SERVICE_PID" 2>/dev/null || \
                 kill -KILL "$AGENTE_SERVICE_PID" 2>/dev/null || true
         fi

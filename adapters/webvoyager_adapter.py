@@ -48,7 +48,7 @@ class WebVoyagerAdapter(BaseAgentAdapter):
         conda_env: str | None = "webvoyager",
         conda_env_path: Path | str | None = None,
         repository: Path | str = DEFAULT_REPOSITORY,
-        max_iter: int = 15,
+        max_iter: int = 100,
         headless: bool = True,
         text_only: bool = False,
         save_accessibility_tree: bool = False,

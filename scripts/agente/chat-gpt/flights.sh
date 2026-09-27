@@ -20,4 +20,4 @@ python orchestrator.py \
   --run-id agente_chat_gpt_flights \
   --max-steps 50 \
   --no-network-probe \
-  --timeout 900
+  --timeout "${AGENTE_FLIGHTS_TIMEOUT:-3600}"

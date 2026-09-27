@@ -32,6 +32,18 @@ async def main():
         # client.  LiteLLM strips it before sending the public alias to the
         # experiment gateway.
         llm_model = model if "/" in model else "openai/" + model
+        protocol = os.environ.get("SKYVERN_LLM_PROTOCOL", "native").strip().lower()
+        protocol_params = {}
+        if protocol == "json":
+            # Skyvern v2 prompts are JSON action protocol prompts, not OpenAI
+            # function/tool prompts.  JSON object mode prevents an
+            # OpenAI-compatible Gemini route from returning an empty assistant
+            # message while leaving the other agents untouched.
+            protocol_params["response_format"] = {"type": "json_object"}
+        elif protocol not in {"text", "native"}:
+            raise ValueError(
+                "SKYVERN_LLM_PROTOCOL must be one of: json, text, native"
+            )
         llm_config = LLMConfig(
             model_name=llm_model,
             required_env_vars=[],
@@ -41,6 +53,7 @@ async def main():
                 "api_key": os.environ.get("SKYVERN_LLM_API_KEY") or "sk-placeholder",
                 "api_base": llm_api_base,
                 "model_info": {"model_name": llm_model},
+                **protocol_params,
             },
         )
         client = Skyvern.local(use_in_memory_db=True, llm_config=llm_config)

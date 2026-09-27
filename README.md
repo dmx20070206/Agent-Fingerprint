@@ -107,6 +107,17 @@ python orchestrator.py --agent skyvern --task-file tasks/external.jsonl \
   --model chat-gpt --no-network-probe
 ```
 
+如果已有 Skyvern 环境使用 Playwright 1.46.0，并出现网页文字不显示、
+`type()` / `fill()` 执行后输入框仍为空，可安装本项目验证过的浏览器依赖覆盖：
+
+```bash
+conda run -n skyvern python -m pip install -r requirements.skyvern-browser.txt
+conda run -n skyvern python -m playwright install chromium
+```
+
+该文件只更新已有 Skyvern 环境的浏览器运行时；后续重新安装上游依赖若恢复了
+旧版 Playwright，需要再次应用此覆盖。
+
 此模式不需要 `SKYVERN_API_KEY`：adapter 使用临时内存数据库和本地浏览器，
 `--model` 是发送给 LiteLLM 的公共 alias，具体云端模型仍由
 `config/litellm.config.yaml` 或 `--upstream-model` 决定。每次运行的 Skyvern
@@ -157,6 +168,13 @@ Agent-E 已注册为 `--agent agente`。适配器会把本轮模型 alias、Lite
 `AGENTE_ENDPOINT` 覆盖。直接执行任一 `scripts/agente/<model>/*.sh` 时，脚本会
 在 8080 端口不可用时自动启动 `agent-e` Conda 环境中的服务，并在任务结束后
 关闭本次脚本启动的服务；已有服务只会复用，不会被脚本关闭。
+
+Agent-E 可通过 `AGENTE_BROWSER_EXECUTABLE`（环境变量或 `lib/Agent-E/.env`）
+指定 Chromium 可执行文件，此设置优先于 `AGENTE_BROWSER_CHANNEL`。在本机，
+旧 Chromium 125 会出现输入操作成功但输入框仍为空的问题；Chromium 151 已验证
+可正常输入。保留 Agent-E 原有 Playwright 1.44，因为它使用旧版 accessibility
+API；只更换浏览器可执行文件。`chat-gpt/flights.sh` 默认允许运行 3600 秒，
+可通过 `AGENTE_FLIGHTS_TIMEOUT` 调整，以容纳规划器与浏览器代理的多轮请求。
 
 例如，使用环境名或环境目录分别写成：
 
@@ -351,7 +369,7 @@ python orchestrator.py --task-file tasks/shop.jsonl --sandbox-directory sandbox/
   --agent browseruse --no-network-probe
 ```
 
-`sandbox/static/10-mouse-move.html` 至 `13-wheel-scroll.html` 分别隔离测试鼠标移动、
+`sandbox/static/mouse-move.html` 至 `13-wheel-scroll.html` 分别隔离测试鼠标移动、
 鼠标点击、键盘打字和鼠标滚轮。可运行对应的 `scripts/browseruse_mouse_move.sh`、
 `browseruse_mouse_click.sh`、`browseruse_keyboard_type.sh` 和
 `browseruse_wheel_scroll.sh`，也可以一次顺序执行四项任务：

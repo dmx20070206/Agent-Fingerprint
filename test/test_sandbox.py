@@ -57,7 +57,7 @@ class SandboxServerTest(unittest.TestCase):
 
     def test_input_interaction_pages_have_distinct_success_contracts(self) -> None:
         contracts = {
-            "10-mouse-move.html": ("pointerenter", "通过：鼠标航迹有效"),
+            "mouse-move.html": ("pointerenter", "通过：鼠标航迹有效"),
             "11-mouse-click.html": ("'click'", "通过：点击序列正确"),
             "12-keyboard-type.html": ("'input'", "通过：转录完全一致"),
             "13-wheel-scroll.html": ("'wheel'", "通过：滚轮轨迹与页面深度均已确认"),
@@ -70,7 +70,7 @@ class SandboxServerTest(unittest.TestCase):
 
     def test_input_interaction_tasks_target_their_matching_pages(self) -> None:
         expected = {
-            "mouse_move.jsonl": "/10-mouse-move.html",
+            "mouse_move.jsonl": "/mouse-move.html",
             "mouse_click.jsonl": "/11-mouse-click.html",
             "keyboard_type.jsonl": "/12-keyboard-type.html",
             "wheel_scroll.jsonl": "/13-wheel-scroll.html",
@@ -212,9 +212,7 @@ class SandboxServerTest(unittest.TestCase):
             }
         )
         self.assertTrue(final["finalized"])
-        self.assertTrue(
-            store.wait_for_finalization("ack-test", {"browser-1"}, timeout=0)["complete"]
-        )
+        self.assertTrue(store.wait_for_finalization("ack-test", {"browser-1"}, timeout=0)["complete"])
         self.assertEqual(store.export("ack-test")["event_count"], 2)
 
     def test_interaction_delay_is_configurable(self) -> None:
