@@ -38,6 +38,7 @@ from adapters import (
     WebVoyagerAdapter,
 )
 from adapters.base_adapter import AgentInterruptedError, AgentResult
+from completion import CompletionResult, VERIFIED_AGENTS
 from gateway import GatewayConfig, LiteLLMGateway
 from probes.traffic_sniffer import CaptureResult, CaptureSession, TrafficSniffer
 from sandbox.server import TraceStore, create_server
@@ -117,7 +118,11 @@ class PipelineRunner:
         interaction_delay_seconds: float = 0.0,
         trace_grace_seconds: float = 0.15,
         trace_finalize_timeout_seconds: float = 8.0,
-        agent_timeout: float | None = 900.0,
+        # Relay-backed LLM calls can legitimately take several minutes while
+        # an upstream provider queues or retries a request.  Keep the parent
+        # wall-clock limit comfortably above the per-request limits used by
+        # the framework adapters.
+        agent_timeout: float | None = 1800.0,
     ) -> None:
         self.output_root = Path(output_root).expanduser().resolve()
         self.sandbox_directory = sandbox_directory
@@ -462,6 +467,8 @@ class PipelineRunner:
         sniffer = None
         capture: CaptureSession | None = None
         agent_result: AgentResult | None = None
+        requires_verification = agent_name in VERIFIED_AGENTS
+        verification: CompletionResult | None = None
         status = "failed"
         error: str | None = None
         interrupted = False
@@ -490,6 +497,7 @@ class PipelineRunner:
                 # event namespace and clear stale events first.
                 sandbox.server.run_id = identifier
                 sandbox.trace_store.clear(identifier)
+                sandbox.server.completion_verifier.clear(identifier)
                 trace_store = sandbox.trace_store
                 url = _resolve_task_url(url, sandbox.base_url)
             gateway = self._make_gateway(run_dir)
@@ -520,6 +528,10 @@ class PipelineRunner:
                 run_dir=run_dir,
                 run_id=identifier,
             )
+            if requires_verification and hasattr(adapter, "check"):
+                # Framework verdicts are diagnostic; verify page completion
+                # after the browser's final uploads have settled.
+                adapter.check = False
             effective_timeout = self.agent_timeout if agent_timeout is None else agent_timeout
             if effective_timeout is not None:
                 if effective_timeout <= 0:
@@ -552,12 +564,13 @@ class PipelineRunner:
             agent_result = adapter.run_task(url, prompt, run_dir / "logs" / "agent")
             if not isinstance(agent_result, AgentResult):
                 raise TypeError("adapter.run_task must return AgentResult")
-            status = "success" if agent_result.success else "failed"
-            if not agent_result.success:
+            completed = agent_result.execution_success if requires_verification else agent_result.success
+            status = "success" if completed else "failed"
+            if not completed:
                 if not agent_result.execution_success:
                     error = error or f"agent returned non-zero code {agent_result.returncode}"
                 else:
-                    error = error or "agent reported task failure"
+                    error = error or "agent did not report task success"
             # A proxy that dies just after serving the final Agent request
             # must not make the run look healthy.  Check only gateways owned
             # by this cycle; a caller-supplied shared gateway may have an
@@ -651,6 +664,17 @@ class PipelineRunner:
                 except BaseException as exc:
                     note_cleanup_failure("sandbox stop failed", exc)
 
+        if requires_verification:
+            verification = (
+                sandbox.server.completion_verifier.result(identifier)
+                if sandbox is not None else CompletionResult()
+            )
+            if agent_result is not None:
+                agent_result.verification = verification
+            if not verification.success:
+                status = "failed"
+                error = error or verification.reason
+
         try:
             ui_trace = self._write_ui_trace(run_dir, identifier, trace_store)
         except BaseException as exc:
@@ -735,6 +759,7 @@ class PipelineRunner:
                 cleanup_errors=cleanup_errors,
                 fingerprint_paths=fingerprint_paths,
                 organized=organized,
+                verification=verification,
             )
         except BaseException as exc:
             # Artifact bookkeeping must never erase the diagnostic result of a
@@ -965,6 +990,7 @@ class PipelineRunner:
         cleanup_errors: Sequence[str] = (),
         fingerprint_paths: Mapping[str, Path] | None = None,
         organized: Mapping[str, Any] | None = None,
+        verification: CompletionResult | None = None,
     ) -> dict[str, Any]:
         organized = dict(organized or {})
         native_result = organized.get("native_result")
@@ -989,10 +1015,15 @@ class PipelineRunner:
             "task": {"url": url, "prompt": prompt},
             "agent": {"name": agent_name, "model": model},
             "outcome": {
-                "success": framework_success if framework_success is not None else status == "success",
+                "success": verification.success if verification is not None else framework_success,
+                "verification": verification.to_dict() if verification is not None else None,
+                "framework_success": framework_success,
                 "framework_status": framework_status,
+                "framework_failure_reason": native_result.get("failure_reason"),
                 "output": output,
-                "failure_reason": native_result.get("failure_reason"),
+                "failure_reason": (
+                    None if verification.success else verification.reason
+                ) if verification is not None else native_result.get("failure_reason"),
                 "step_count": native_result.get("step_count"),
             },
             "execution": _compact_agent_result(agent_result),
@@ -1393,13 +1424,23 @@ def _organize_run_files(
     final_value = native_result.get("output") if isinstance(native_result, dict) else None
     if final_value is None and agent_result and agent_result.stdout:
         final_value = agent_result.stdout.strip()
+    verification = agent_result.verification if agent_result else None
+    framework_status = native_result.get("task_status") if isinstance(native_result, dict) else None
+    final_status = (
+        ("completed" if verification.success else verification.status)
+        if verification is not None else framework_status
+    )
     interaction_path = logs_dir / "agent_interactions.json"
     interaction_path.write_text(json.dumps({
         "schema": "agent-fingerprint-interactions/v1",
         "run_id": run_dir.name,
         "llm_interactions": interaction_events,
         "agent_actions": actions,
-        "final_output": {"value": final_value, "status": (native_result.get("task_status") if isinstance(native_result, dict) else None) or ("completed" if agent_result and agent_result.task_success else "failed")},
+        "final_output": {
+            "value": final_value,
+            "status": final_status or ("completed" if agent_result and agent_result.task_success is True else "unknown"),
+            "framework_status": framework_status,
+        },
     }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     log_map["agent_interactions"] = _artifact_name(interaction_path, run_dir)
 

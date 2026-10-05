@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Iterator, Mapping, Sequence
 from urllib.parse import urlparse
 
+from completion import CompletionResult
+
 
 class AgentAdapterError(RuntimeError):
     """Base exception raised by an adapter."""
@@ -41,6 +43,7 @@ class AgentResult:
     # loop without completing the requested browser task.
     task_success: bool | None = None
     task_status: str | None = None
+    verification: CompletionResult | None = None
 
     @property
     def execution_success(self) -> bool:
@@ -50,7 +53,9 @@ class AgentResult:
 
     @property
     def success(self) -> bool:
-        return self.execution_success and self.task_success is not False
+        if self.verification is not None:
+            return self.execution_success and self.verification.success
+        return self.execution_success and self.task_success is True
 
     def to_dict(self, *, include_output: bool = True) -> dict[str, object]:
         """Return a JSON-friendly representation for pipeline metadata."""
@@ -314,11 +319,12 @@ class BaseAgentAdapter(ABC):
         )
 
         if self.check and not result.success:
-            reason = (
-                "reported task failure"
-                if result.task_success is False
-                else f"exited with return code {result.returncode}"
-            )
+            if not result.execution_success:
+                reason = f"exited with return code {result.returncode}"
+            elif result.task_success is False:
+                reason = "reported task failure"
+            else:
+                reason = "did not report a task outcome"
             error_type = AgentInterruptedError if interrupted else AgentExecutionError
             raise error_type(f"{self.adapter_name} {reason}", result)
         return result

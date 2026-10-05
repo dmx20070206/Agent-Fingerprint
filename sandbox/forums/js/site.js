@@ -4,6 +4,7 @@ import { init as initThread } from './pages/forum_thread.js';
 const content = document.getElementById('content');
 
 async function loadPage(path) {
+    document.body.dataset.taskStatus = 'pending';
     const threadId = new URL(location.href).searchParams.get('thread');
     const fragment = threadId ? 'pages/forum_thread.html' : 'pages/forums.html';
     const response = await fetch(fragment);

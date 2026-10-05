@@ -62,7 +62,7 @@ class InjectMonitorTest(unittest.TestCase):
             self.assertIn(method, source)
         self.assertIn("value_length", source)
         self.assertNotIn("value: event.target.value", source)
-        self.assertIn('record("pointermove"', source)
+        self.assertIn('record("mousemove"', source)
         for option in ("capturePointerMoves", "captureKeyboard", "captureMutations", "flushIntervalMs"):
             self.assertNotIn(option, source)
         for event in ("touchstart", "selectionchange", "resize", "mutation", "paste", "wheel"):
@@ -86,3 +86,48 @@ class InjectMonitorTest(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+def test_monitor_records_history_navigation_and_anchor_href():
+    """Execute the probe in a minimal DOM and check emitted trace payloads."""
+    import shutil
+    import subprocess
+    import pytest
+    if not shutil.which('node'):
+        pytest.skip('node is required for probe execution')
+    subprocess.run(['node', '-e', r'''
+const assert = require('assert');
+const listeners = {}, domListeners = {};
+global.window = global;
+global.location = {href: 'https://example.test/'};
+global.addEventListener = (name, fn) => { listeners[name] = fn; };
+global.removeEventListener = () => {};
+global.setInterval = () => 1;
+global.setTimeout = () => 1;
+global.document = {
+  documentElement: {lang: 'en'},
+  addEventListener: (name, fn) => { domListeners[name] = fn; },
+  removeEventListener: () => {},
+  createElement: () => ({getContext: () => null})
+};
+global.history = {
+  pushState: function (state, title, url) { location.href = new URL(url, location.href).href; return 42; },
+  replaceState: function (state, title, url) { location.href = new URL(url, location.href).href; }
+};
+console.log = () => {};
+require('./probes/inject_monitor.js');
+assert.strictEqual(history.pushState({}, '', '/next'), 42);
+history.replaceState({}, '', '/next'); // No URL change, no navigation.
+listeners.popstate();
+domListeners.click({type: 'click', clientX: 1, clientY: 2, target: {
+  nodeType: 1, tagName: 'A', id: 'link',
+  getAttribute: (name) => name === 'href' ? '/target' : null
+}});
+let events = __agentFingerprintMonitor.getEvents();
+assert.strictEqual(events[0].navigation_tracking, true);
+assert.deepStrictEqual(events.filter(e => e.type === 'navigation').map(e => e.reason), ['pushState', 'popstate']);
+assert.strictEqual(events.find(e => e.type === 'click').target.href, '/target');
+__agentFingerprintMonitor.stop();
+history.pushState({}, '', '/stopped');
+assert.strictEqual(__agentFingerprintMonitor.getEvents().filter(e => e.type === 'navigation').length, 2);
+'''], check=True, capture_output=True, text=True)

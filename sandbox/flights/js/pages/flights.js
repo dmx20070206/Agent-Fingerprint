@@ -2,6 +2,7 @@ import { countWebsiteVersion, postComplete, redirectToCompletionPage } from "../
 
 export function init() {
   const container = document.getElementById("flight-form-container");
+  document.body.dataset.taskStatus = "pending";
 
   let state = {
     from: "",
@@ -490,6 +491,8 @@ export function init() {
           <h3>Thank you, ${state.name}!</h3>
           <p>Your flight has been successfully booked.</p>
         `;
+      // Shared completion contract read by the browser agent runners.
+      document.body.dataset.taskStatus = "passed";
       postComplete({ "webpage": "flights" });
       const websiteVersion = location.pathname.split("/")[1] || "";
       if (websiteVersion === countWebsiteVersion) {

@@ -20,7 +20,7 @@ class FakeAdapter:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "result.json").write_text(json.dumps({"url": url, "prompt": prompt}), encoding="utf-8")
-        return AgentResult("fake", ("fake-agent",), output_dir, 0, "done", "", 0.01)
+        return AgentResult("fake", ("fake-agent",), output_dir, 0, "done", "", 0.01, task_success=True)
 
 
 class FakeCapture:
@@ -255,7 +255,7 @@ class PipelineTest(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                return AgentResult("skyvern", ("python", "-c", "inline"), output, 0, "done", "", 0.01)
+                return AgentResult("skyvern", ("python", "-c", "inline"), output, 0, "done", "", 0.01, task_success=True)
 
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "run"
@@ -319,12 +319,14 @@ class PipelineTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "human-readable-output"
+            (Path(directory) / "01-minimal.html").write_text("<!doctype html><body>Fixture</body>")
 
             def make_gateway(run_dir):
                 return MockOpenAIGateway(run_dir / "mock_gateway")
 
             runner = PipelineRunner(
                 output_root=Path(directory) / "runs",
+                sandbox_directory=directory,
                 gateway_factory=make_gateway,
                 use_network_probe=False,
             )

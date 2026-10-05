@@ -390,10 +390,12 @@ class Skyvern:
 
     def test_execute_persists_result_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            result = _FakeAdapter(conda_env=None).run_task(
+            result = _FakeAdapter(conda_env=None, check=False).run_task(
                 "http://127.0.0.1:8000/01-minimal.html", "click the button", directory
             )
-            self.assertTrue(result.success)
+            self.assertTrue(result.execution_success)
+            self.assertFalse(result.success)
+            self.assertIsNone(result.task_success)
             self.assertEqual(result.stdout.strip(), "ok")
             self.assertTrue((Path(directory) / "stdout.log").is_file())
             self.assertTrue((Path(directory) / "stderr.log").is_file())
@@ -406,7 +408,7 @@ class Skyvern:
 
     def test_execute_redacts_secrets_from_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            adapter = _FakeAdapter(conda_env=None)
+            adapter = _FakeAdapter(conda_env=None, check=False)
             result = adapter.execute(
                 ["python", "-c", "print('ok')", "secret-token"],
                 output_dir=Path(directory),
@@ -552,7 +554,7 @@ class Skyvern:
         self.assertEqual(environment["OPENAI_BASE_URL"], "http://127.0.0.1:4000/v1")
         self.assertEqual(environment["OPENAI_API_BASE"], "http://127.0.0.1:4000/v1")
         runner_source = Path("lib/WebVoyager/run.py").read_text(encoding="utf-8")
-        self.assertIn("client_kwargs['base_url'] = api_base", runner_source)
+        self.assertIn('client_kwargs["base_url"] = api_base', runner_source.replace("'", '"'))
         self.assertIn('"task_success": overall_success', runner_source)
         self.assertIn("page_reports_success(driver_task)", runner_source)
 

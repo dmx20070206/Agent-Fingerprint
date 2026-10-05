@@ -66,6 +66,27 @@ python orchestrator.py --task-file tasks/tasks.jsonl \
 完整 PCAP 位于 `artifacts/network/`；Agent 和网关的非空 stdout/stderr 位于
 `logs/`。`data/runs/index.jsonl` 维护 run ID 到日期目录的索引。
 
+航班页面使用与基础交互页一致的完成状态协议：`body[data-task-status]` 在初始化时为
+`pending`，付款表单提交并显示预订成功后为 `passed`。WebVoyager 和 Browser-use
+可读取该标记确认完成；`/end` 上报仍照常发送。该标记表示页面流程已完成，不校验
+所填座位等信息是否与任务要求一致。
+
+五个 Agent 框架在流水线中统一由页面完成验证器作最终判定。页面报告 `passed`
+才算任务完成；`pending`、`failed` 或缺少证据都不能记为成功。验证器不比较任务
+参数，因此姓名、座位、随身行李等选项与要求的小偏差仍视作完成流程。购物页面在
+打开非空购物车并展示结果后通过，论坛页面在提交非空回复后通过；空购物车、只填表
+而没有提交均不通过。
+
+完成证据通过独立的轻量观察器上传，不依赖 L2/L3 指纹采集，也不依赖模型输出的
+`TASK_COMPLETE`。页面刷新、任务切换和乱序重传不会复用上一页面的通过结果。
+尚未接入此协议的页面（包括外部网站）会记录 `unknown`，不会退回“模型说成功”
+的判定方式。接入新页面时，初始化设为 `pending`，在真实完成流程后设为 `passed`。
+
+`manifest.outcome.verification` 保存验证状态、原因和页面位置，`framework_success`
+与 `framework_status` 保留框架自报结果。正常结束但模型判失败不再使用非零退出码；
+真正的运行异常仍会使整轮运行失败。单独调用适配器时，未知结果也不会默认成功；
+统一页面验证发生在 `PipelineRunner` 中。
+
 ## 2. 快速安装
 
 根环境只负责调度、网关管理和测试。下面是一个方便开发的安装方式：
@@ -479,27 +500,29 @@ data/runs/<日期>/<run_id>/
 
 `manifest.json` 的关键字段：
 
-* `status`：只有 Agent 成功且抓包没有失败时才是 `success`。
+* `status`：五个 Agent 框架须通过页面完成验证，且进程、抓包与清理没有失败，才是 `success`。
 * `task.requested_url`/`task.url`：分别是调用方传入的 URL 和解析后的 URL。相对路径会指向本轮临时沙盒端口。
-* `outcome`：Agent 的归一化输出、框架状态、失败原因和步数。
+* `outcome`：页面完成验证结果，以及独立保留的框架自报状态、输出和步数。`success` 表示任务完成，运行基础设施错误另见顶层 `status`、`error` 和 `execution`。
 * `execution`：子进程返回码、耗时和命令摘要哈希；不会嵌入 inline runner 源码。
 * `gateway.route`：本轮 alias、上游模型和 key 环境变量（不保存 key 本身）。
 * `gateway.latency_event_count`：已折叠进 L4 的网关事件数；临时 JSONL 不重复保留。
 * `fingerprints`、`artifacts`、`logs`：三类文件的相对路径；`files` 是完整规范文件清单。
 * `cleanup_errors`：停止服务或写文件时发生的附加错误；主错误不会被清理错误覆盖。
 
-四个格式化脚本只需要传任务 id；它们通过 `data/runs/index.jsonl` 定位日期目录，
+L3 特征提取使用运行 ID，通过 `data/runs/index.jsonl` 定位运行目录，缺少有效索引时递归查找，
 并写到 `data/results/<id>`：
 
 ```bash
-python analysis/l1_http_tls.py <id>
-python analysis/l2_browser_static.py <id>
-python analysis/l3_browser_dynamic.py <id>
-python analysis/l4_agent_trace.py <id>
+python -m analysis.l3_browser_dynamic --task-id <run_id>
+# 对整理后的 final 数据直接指定输入根目录
+python -m analysis.l3_browser_dynamic --task-id <run_id> --input-dir data/runs/final
 ```
 
-四个脚本都支持 `--input-dir` 和 `--output-dir` 覆盖默认目录；结果文件名与
-四个原始文件一致，但 schema 为格式化后的 L1–L4 模型输入格式。
+精选数据按 `data/runs/final/<任务>/<agent>/<模型>/run_0001/` 归档，末级目录使用全局唯一短编号，内部 `run_id` 与目录名一致。
+单次分析、数据集构建和 ID 修复都支持此分层结构，也可以指定某个任务或 Agent 子目录。
+
+支持 `--input-dir` 和 `--output-dir` 覆盖默认目录。L3 输出为 v3 的 58 维特征；
+数据集构建和分类训练见 [离线分类流程](docs/classification.md)。
 
 显式传入 `--output-dir` 时，默认拒绝复用非空目录，避免一次采集覆盖另一次采集；确认要复用时才加 `--overwrite`。不传该参数时，新运行写入 `--output-root/<日期>/<run_id>`。旧 v1 目录可先预览、再显式迁移：
 
@@ -628,3 +651,16 @@ Agent-E 仍不是“一次命令启动全部组件”的框架：任务脚本负
 知道其内部依赖。
 
 Conda 环境解决的是“哪个依赖被加载”的问题，不提供权限边界；如果 Agent 不可信，请使用容器/独立 UID、最小化环境变量（不要把所有云凭据继承给子进程）、限制浏览器下载目录和网络出口。`--mock-llm` 与本地 Mock 服务只验证协议和清理，不验证视觉理解、规划质量或真实框架成功率。
+
+## L3 离线分类
+
+特征提取、数据质量检查、Agent/LLM 共用训练入口、模型预测及测试说明见 [离线分类流程](docs/classification.md)。当前特征契约为 v3（58 维，缺失值为 null），详细定义见 [行为特征](docs/behavior_fingerprint_features.md)。
+
+```bash
+bash scripts/run_analysis.sh prepare --dry-run  # 预览目录和 ID 整理
+bash scripts/run_analysis.sh all                # 整理 → 数据集 → 训练及交叉验证 → 回归测试
+bash scripts/run_analysis.sh test               # 单独运行离线分析测试
+bash scripts/run_analysis.sh --help             # 分步命令及路径参数
+```
+
+默认使用新输出目录；分步构建数据集、训练和预测时，使用相同的 `--run-name` 关联产物。

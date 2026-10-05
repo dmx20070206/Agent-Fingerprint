@@ -7,9 +7,13 @@ from typing import Any
 
 try:
     from ._common import parser, paths, read_json, write_json
+    from .feature_schema import SCHEMA, FEATURE_NAMES
+    from .episode_features import episode_features, load_run_metadata
 except ImportError:
     from _common import parser, paths, read_json, write_json
-MISSING = -1.0
+    from feature_schema import SCHEMA, FEATURE_NAMES
+    from episode_features import episode_features, load_run_metadata
+MISSING = None
 # Pointer movement is treated as mouse movement throughout the feature
 # extraction pipeline (pointer events also cover a physical mouse).
 MOUSE_MOVE_TYPES = ("mousemove", "pointermove")
@@ -19,7 +23,8 @@ def _t(e):
     for k in ("monotonic_ms", "epoch_ms", "ts", "timestamp"):
         try:
             v = float(e[k])
-            return v if math.isfinite(v) else None
+            if math.isfinite(v):
+                return v
         except (KeyError, TypeError, ValueError):
             pass
     return None
@@ -45,6 +50,8 @@ def _num(e, key):
 
 def _same_pointer_event(pointer, mouse):
     """Identify the paired PointerEvent/MouseEvent emitted for one action."""
+    if pointer.get("session_id") != mouse.get("session_id"):
+        return False
     if pointer.get("type") == "pointermove" and mouse.get("type") == "mousemove":
         tolerance = 2.0
     elif pointer.get("type") == "pointerdown" and mouse.get("type") == "mousedown":
@@ -66,26 +73,45 @@ def _same_pointer_event(pointer, mouse):
 
 
 def _canonical_events(events):
-    """Normalize pointer input to mouse input and drop paired duplicate events."""
+    """Drop only adjacent pointer/mouse pairs, retaining genuine mouse moves."""
     result = []
+    previous = None
+    mapping = {"pointermove": "mousemove", "pointerdown": "mousedown",
+               "pointerup": "mouseup", "pointercancel": "mouseup"}
     for event in events:
-        event = dict(event)
-        pointer_type = event.get("type")
-        if pointer_type in ("mousemove", "mousedown", "mouseup") and result:
-            prior = result[-1]
-            if prior.get("type") == pointer_type:
-                pt, mt = _t(prior), _t(event)
-                if pt is not None and mt is not None and abs(pt - mt) <= 5 and prior.get("button", 0) == event.get("button", 0):
-                    same_coords = all(
-                        _num(prior, key) is None or _num(event, key) is None or abs(_num(prior, key) - _num(event, key)) <= 2
-                        for key in ("client_x", "client_y")
-                    )
-                    if same_coords: continue
-        if pointer_type == "pointermove": event["type"] = "mousemove"
-        elif pointer_type == "pointerdown": event["type"] = "mousedown"
-        elif pointer_type in ("pointerup", "pointercancel"): event["type"] = "mouseup"
-        result.append(event)
+        if previous is not None and _same_pointer_event(previous, event):
+            previous = event
+            continue
+        normalized = dict(event)
+        normalized["type"] = mapping.get(event.get("type"), event.get("type"))
+        result.append(normalized)
+        previous = event
     return result
+
+
+def _segments(events):
+    """Separate document sessions, navigation and backwards clocks."""
+    groups = []
+    current = []
+    last_session = None
+    last_time = None
+    for event in events:
+        session, time = event.get("session_id"), _t(event)
+        boundary = (session != last_session or
+                    event.get("type") in {"monitor_start", "navigate", "navigation"} or
+                    (time is not None and last_time is not None and time < last_time))
+        if boundary and current:
+            groups.append(current)
+            current = []
+        current.append(event)
+        last_session, last_time = session, time
+        if event.get("type") in {"beforeunload", "pagehide"}:
+            groups.append(current)
+            current = []
+            last_time = None
+    if current:
+        groups.append(current)
+    return groups
 
 
 def _unwrap_angles(values):
@@ -97,89 +123,129 @@ def _unwrap_angles(values):
     return result
 
 
-def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
+def format_l3(raw: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     ev = [e for e in raw.get("events", []) if isinstance(e, dict)]
-    typ = [str(e.get("type", "")) for e in ev]
-    kd = sorted((_t(e), e.get("key", e.get("code"))) for e in ev if e.get("type") == "keydown" and _t(e) is not None)
-    ku = {}
-    for e in ev:
-        if e.get("type") == "keyup" and _t(e) is not None:
-            ku.setdefault(e.get("key", e.get("code")), []).append(_t(e))
-    holds = []
-    complete = []
-    complete_keys = []
-    dangling_down = False
-    for t, k in kd:
-        c = [u for u in ku.get(k, []) if u >= t]
-        if c:
-            u = min(c)
-            ku[k].remove(u)
-            holds.append(u - t)
-            complete.append(t)
-            complete_keys.append(k)
-        else:
-            dangling_down = True
-    dangling_up = any(ku.values())
-    inter = [b - a for a, b in zip(complete, complete[1:])]
-    mouse_ev = _canonical_events(ev)
+    kd = []
+    holds, inter, complete_keys = [], [], []
+    dangling_down = dangling_up = False
+    dist, dire, unwrapped_dire, ang = [], [], [], []
+    transitions = {name: [] for name in ("distance", "direction", "turn_angle", "interval")}
+    valid_moves = connected_moves = 0
+    sd, st = [], []
+    scroll_reversals = 0
+    mouse_ev = []
+    for segment in _segments(ev):
+        downs = sorted(((_t(e), e.get("key", e.get("code"))) for e in segment
+                        if e.get("type") == "keydown" and _t(e) is not None),
+                       key=lambda item: item[0])
+        kd.extend(downs)
+        ups = {}
+        for e in segment:
+            if e.get("type") == "keyup" and _t(e) is not None:
+                ups.setdefault(e.get("key", e.get("code")), []).append(_t(e))
+        complete = []
+        for t, key in downs:
+            candidates = [u for u in ups.get(key, []) if u >= t]
+            if candidates:
+                u = min(candidates)
+                ups[key].remove(u)
+                holds.append(u - t)
+                complete.append(t)
+                complete_keys.append(key)
+            else:
+                dangling_down = True
+        dangling_up |= any(ups.values())
+        inter.extend(b - a for a, b in zip(complete, complete[1:]))
+        normalized = _canonical_events(segment)
+        mouse_ev.extend(normalized)
+        # Discrete viewport positions retain acquisition order across clicks,
+        # scrolls and waits. Intervals include agent thinking, not travel time.
+        moves = [e for e in normalized if e.get("type") == "mousemove"
+                 and _num(e, "client_x") is not None and _num(e, "client_y") is not None]
+        valid_moves += len(moves)
+        transition_directions = []
+        previous_direction = None
+        for a, b in zip(moves, moves[1:]):
+            dx = _num(b, "client_x") - _num(a, "client_x")
+            dy = _num(b, "client_y") - _num(a, "client_y")
+            distance = math.hypot(dx, dy)
+            transitions["distance"].append(distance)
+            ta, tb = _t(a), _t(b)
+            if ta is not None and tb is not None:
+                transitions["interval"].append(tb - ta)
+            direction = math.atan2(dy, dx) if distance else None
+            if direction is not None:
+                transition_directions.append(direction)
+                if previous_direction is not None:
+                    delta = direction - previous_direction
+                    transitions["turn_angle"].append(math.atan2(math.sin(delta), math.cos(delta)))
+            # A stationary transition has no heading and cannot form a turn.
+            previous_direction = direction
+        transitions["direction"].extend(_unwrap_angles(transition_directions))
+        connected = set()
+        previous_index = None
+        previous = None
+        directions = []
+
+        def flush():
+            dire.extend(directions)
+            unwrapped_dire.extend(_unwrap_angles(directions))
+            ang.extend(math.atan2(math.sin(b-a), math.cos(b-a))
+                       for a, b in zip(directions, directions[1:]))
+            directions.clear()
+
+        for move_index, e in enumerate(normalized):
+            if e.get("type") in {"mousedown", "mouseup", "click"}:
+                flush()
+                previous = None
+            if e.get("type") != "mousemove":
+                continue
+            x, y, t = _num(e, "client_x"), _num(e, "client_y"), _t(e)
+            if x is None or y is None or t is None:
+                flush()
+                previous = None
+                continue
+            if previous is not None:
+                px, py, pt = previous
+                if 0 <= t - pt <= 250:
+                    distance = math.hypot(x-px, y-py)
+                    if distance:
+                        connected.update((previous_index, move_index))
+                        dist.append(distance)
+                        directions.append(math.atan2(y-py, x-px))
+                else:
+                    flush()
+            previous = (x, y, t)
+            previous_index = move_index
+        flush()
+        connected_moves += len(connected)
+        # Scroll positions from different elements are different coordinate systems.
+        scroll_groups = {}
+        for e in segment:
+            if e.get("type") == "scroll":
+                target = e.get("target") or {}
+                identity = target.get("css_path", target.get("id", "document"))
+                scroll_groups.setdefault(identity, []).append(e)
+        for scroll in scroll_groups.values():
+            previous_delta = None
+            for a, b in zip(scroll, scroll[1:]):
+                def coord(event, axis):
+                    for name in ("scroll_" + axis, "scroll" + axis.upper(), axis):
+                        value = _num(event, name)
+                        if value is not None:
+                            return value
+                    return None
+                ax, ay, bx, by = coord(a, "x"), coord(a, "y"), coord(b, "x"), coord(b, "y")
+                if None not in (ax, ay, bx, by):
+                    sd.append(math.hypot(bx-ax, by-ay))
+                ta, tb = _t(a), _t(b)
+                if ta is not None and tb is not None:
+                    st.append(tb-ta)
+                delta = by-ay if ay is not None and by is not None else None
+                if delta and previous_delta and (delta > 0) != (previous_delta > 0):
+                    scroll_reversals += 1
+                previous_delta = delta
     typ = [str(e.get("type", "")) for e in mouse_ev]
-    pts = []
-    dist = []
-    dire = []
-    last_move_time = None
-    movement_open = False
-    for e in mouse_ev:
-        if e.get("type") in ("mousedown", "mouseup", "click"):
-            movement_open = False
-            last_move_time = None
-            continue
-        if e.get("type") not in MOUSE_MOVE_TYPES:
-            continue
-        x, y = _num(e, "client_x"), _num(e, "client_y")
-        if x is None or y is None:
-            continue
-        t = _t(e)
-        if last_move_time is not None and t is not None and t - last_move_time > 250:
-            movement_open = False
-        if movement_open and pts:
-            X, Y = x, y
-            px, py = pts[-1]
-            dx, dy = X - px, Y - py
-            d = math.hypot(dx, dy)
-            if d:
-                dist.append(d)
-                dire.append(math.atan2(dy, dx))
-        pts.append((x, y))
-        movement_open = True
-        last_move_time = t
-    # Do not connect the first point after a segment boundary to the prior point.
-    # The loop above retains points for presence, while distances are only added
-    # while movement_open is true within the same segment.
-    unwrapped_dire = _unwrap_angles(dire)
-    ang = [math.atan2(math.sin(b - a), math.cos(b - a)) for a, b in zip(dire, dire[1:])]
-    scroll = [e for e in ev if e.get("type") == "scroll"]
-    sd = []
-    st = []
-    for a, b in zip(scroll, scroll[1:]):
-        try:
-            p = (a.get("scroll_x", a.get("scrollX", a.get("x", 0))), a.get("scroll_y", a.get("scrollY", a.get("y", 0))))
-            q = (b.get("scroll_x", b.get("scrollX", b.get("x", 0))), b.get("scroll_y", b.get("scrollY", b.get("y", 0))))
-            sd.append(math.hypot(float(q[0]) - float(p[0]), float(q[1]) - float(p[1])))
-        except (TypeError, ValueError, IndexError):
-            pass
-    ts = [_t(e) for e in scroll if _t(e) is not None]
-    st = [b - a for a, b in zip(ts, ts[1:])]
-    scroll_depths = []
-    for e in scroll:
-        value = _num(e, "scroll_y")
-        if value is None: value = _num(e, "scrollY")
-        if value is None: value = _num(e, "y")
-        if value is not None: scroll_depths.append(value)
-    scroll_deltas = [b - a for a, b in zip(scroll_depths, scroll_depths[1:])]
-    scroll_reversals = sum(
-        1 for a, b in zip(scroll_deltas, scroll_deltas[1:])
-        if a and b and ((a > 0) != (b > 0))
-    )
     btn = {
         b: (
             sum(e.get("type") in ("mousedown", "pointerdown") and e.get("button", 0) == b for e in mouse_ev),
@@ -201,15 +267,13 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
             static = candidate.get("static_fingerprint") if isinstance(candidate, dict) else None
             viewport = static.get("viewport") if isinstance(static, dict) else None
             if isinstance(viewport, dict):
-                viewport_width = viewport_width or float(viewport.get("width") or 0)
-                viewport_height = viewport_height or float(viewport.get("height") or 0)
+                viewport_width = viewport_width or (_num(viewport, "width") or 0)
+                viewport_height = viewport_height or (_num(viewport, "height") or 0)
         viewport_area = viewport_width * viewport_height
         if not viewport_area:
-            viewport_area = float((raw.get("viewport_width") or 0) * (raw.get("viewport_height") or 0))
-        if not viewport_area:
-            viewport_area = 1.0
-        bbox_frac = ((max(click_x) - min(click_x)) * (max(click_y) - min(click_y))) / viewport_area
-    key_count = len(kd)
+            viewport_area = (_num(raw, "viewport_width") or 0) * (_num(raw, "viewport_height") or 0)
+        if viewport_area > 0:
+            bbox_frac = ((max(click_x) - min(click_x)) * (max(click_y) - min(click_y))) / viewport_area
     structural_keys = {"Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Escape", "Esc", "Backspace"}
     structural_count = sum(k in structural_keys for _, k in kd)
     printable_count = sum(isinstance(k, str) and len(k) == 1 and k.isprintable() for _, k in kd)
@@ -219,22 +283,21 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
     exit_scroll = [_num(e, "scroll_pct") for e in ev if e.get("type") == "beforeunload" and _num(e, "scroll_pct") is not None]
     f = {}
 
-    def put(_position, n, v):
+    def put(n, v):
         f[n] = v
 
     vals = [
-        (1, "paste_count", typ.count("paste")),
-        (2, "mouse_curvature_angle_range", _stat(ang, "range")),
-        (3, "hold_latency_median", _stat(holds, "median")),
-        (4, "inter_key_latency_median", _stat(inter, "median")),
-        (5, "hold_latency_mean", _stat(holds, "mean")),
-        (6, "scroll_distance_std", _stat(sd, "std")),
-        (7, "change_count", typ.count("change")),
-        (8, "scroll_distance_mean", _stat(sd, "mean")),
-        (9, "scroll_time_median", _stat(st, "median")),
-        (10, "input_count", typ.count("input")),
+        ("paste_count", typ.count("paste")),
+        ("mouse_curvature_angle_range", _stat(ang, "range")),
+        ("hold_latency_median", _stat(holds, "median")),
+        ("inter_key_latency_median", _stat(inter, "median")),
+        ("hold_latency_mean", _stat(holds, "mean")),
+        ("scroll_distance_std", _stat(sd, "std")),
+        ("change_count", typ.count("change")),
+        ("scroll_distance_mean", _stat(sd, "mean")),
+        ("scroll_time_median", _stat(st, "median")),
+        ("input_count", typ.count("input")),
         (
-            11,
             "mouse_event_count",
             sum(
                 e.get("type")
@@ -242,53 +305,46 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
                 for e in mouse_ev
             ),
         ),
-        (12, "scroll_distance_range", _stat(sd, "range")),
-        (13, "button0_count", sum(btn[0])),
-        (14, "hold_latency_range", _stat(holds, "range")),
-        (15, "inter_key_latency_mean", _stat(inter, "mean")),
-        (16, "scroll_time_mean", _stat(st, "mean")),
-        (17, "scroll_distance_median", _stat(sd, "median")),
-        (18, "mouse_curvature_angle_mean", _stat(ang, "mean")),
-        (19, "dangling_keydown", int(dangling_down)),
-        (20, "scroll_time_std", _stat(st, "std")),
-        (21, "scroll_count", typ.count("scroll")),
-        (22, "mouse_direction_mean", _stat(unwrapped_dire, "mean")),
-        (23, "inter_key_latency_range", _stat(inter, "range")),
-        (24, "button0_down_up_ratio", _ratio(*btn[0])),
-        (25, "mouse_curvature_angle_std", _stat(ang, "std")),
-        (26, "mouse_curvature_distance_median", _stat(dist, "median")),
-        (27, "mouse_direction_range", _stat(unwrapped_dire, "range")),
-        (28, "scroll_time_range", _stat(st, "range")),
-        (29, "hold_latency_std", _stat(holds, "std")),
-        (30, "scrollend_count", typ.count("scrollend")),
-        (31, "inter_key_latency_std", _stat(inter, "std")),
-        (32, "backspace_delete_count", sum(k in ("Backspace", "Delete") for k in complete_keys)),
-        (33, "mouse_curvature_distance_mean", _stat(dist, "mean")),
-        (34, "mousemove_count", typ.count("mousemove")),
-        (35, "keypress_count", typ.count("keydown")),
-        (36, "mouse_direction_std", _stat(unwrapped_dire, "std")),
+        ("scroll_distance_range", _stat(sd, "range")),
+        ("button0_count", sum(btn[0])),
+        ("hold_latency_range", _stat(holds, "range")),
+        ("inter_key_latency_mean", _stat(inter, "mean")),
+        ("scroll_time_mean", _stat(st, "mean")),
+        ("scroll_distance_median", _stat(sd, "median")),
+        ("mouse_curvature_angle_mean", _stat(ang, "mean")),
+        ("dangling_keydown", int(dangling_down)),
+        ("scroll_time_std", _stat(st, "std")),
+        ("scroll_count", typ.count("scroll")),
+        ("mouse_direction_mean", _stat(unwrapped_dire, "mean")),
+        ("inter_key_latency_range", _stat(inter, "range")),
+        ("button0_down_up_ratio", _ratio(*btn[0])),
+        ("mouse_curvature_angle_std", _stat(ang, "std")),
+        ("mouse_curvature_distance_median", _stat(dist, "median")),
+        ("mouse_direction_range", _stat(unwrapped_dire, "range")),
+        ("scroll_time_range", _stat(st, "range")),
+        ("hold_latency_std", _stat(holds, "std")),
+        ("scrollend_count", typ.count("scrollend")),
+        ("inter_key_latency_std", _stat(inter, "std")),
+        ("backspace_delete_count", sum(k in ("Backspace", "Delete") for k in complete_keys)),
+        ("mouse_curvature_distance_mean", _stat(dist, "mean")),
+        ("mousemove_count", typ.count("mousemove")),
+        ("keypress_count", typ.count("keydown")),
+        ("mouse_direction_std", _stat(unwrapped_dire, "std")),
     ]
     for x in vals:
         put(*x)
-    # The feature vector is a fixed 50-dimensional schema.  Ranks 37-50 are
-    # ordinary feature positions, not classifier-derived importance scores.
-    put(37, "dangling_keyup", int(dangling_up))
-    put(38, "backspace_delete_ratio", _ratio(f["backspace_delete_count"], len(holds)))
-    rank = 39
+    put("dangling_keyup", int(dangling_up))
+    put("backspace_delete_ratio", _ratio(f["backspace_delete_count"], len(holds)))
     for b in range(1, 5):
-        put(rank, f"button{b}_count", sum(btn[b]))
-        rank += 1
-        put(rank, f"button{b}_down_up_ratio", _ratio(*btn[b]))
-        rank += 1
+        put(f"button{b}_count", sum(btn[b]))
+        put(f"button{b}_down_up_ratio", _ratio(*btn[b]))
     for n, x in [
-        ("mouse_direction_median", _stat(dire, "median")),
+        ("mouse_direction_median", _stat(unwrapped_dire, "median")),
         ("mouse_curvature_angle_median", _stat(ang, "median")),
         ("mouse_curvature_distance_range", _stat(dist, "range")),
         ("mouse_curvature_distance_std", _stat(dist, "std")),
         ("scroll_reversals", scroll_reversals),
         ("structural_key_ratio", structural_key_ratio),
-        ("mean_key_iei_ms", _stat(inter, "mean")),
-        ("std_key_iei_ms", _stat(inter, "std")),
         ("click_x_std", _stat(click_x, "std")),
         ("click_y_std", _stat(click_y, "std")),
         ("click_bbox_area_frac", bbox_frac),
@@ -296,8 +352,16 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
         ("nav_to_click_ratio", _ratio(nav_count, len(clicks))),
         ("mean_exit_scroll_pct", _stat(exit_scroll, "mean")),
     ]:
-        put(rank, n, x)
-        rank += 1
+        put(n, x)
+    for name, values in transitions.items():
+        for stat in ("mean", "std"):
+            put(f"mouse_transition_{name}_{stat}", _stat(values, stat))
+    put("mouse_isolated_move_ratio", _ratio(valid_moves - connected_moves, valid_moves))
+    episode = episode_features(raw, ev, metadata or {}, _num, _stat, _ratio)
+    f.update(episode)
+    if set(f) != set(FEATURE_NAMES):
+        raise ValueError("L3 feature schema mismatch")
+    f = {name: f[name] for name in FEATURE_NAMES}
     stats = ("mean", "median", "range", "std")
     movement = {
         "mouse_event_count": f["mouse_event_count"],
@@ -305,6 +369,10 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
         "mouse_direction": {stat: f[f"mouse_direction_{stat}"] for stat in stats},
         "mouse_curvature_angle": {stat: f[f"mouse_curvature_angle_{stat}"] for stat in stats},
         "mouse_curvature_distance": {stat: f[f"mouse_curvature_distance_{stat}"] for stat in stats},
+        **{f"mouse_transition_{name}": {
+            stat: f[f"mouse_transition_{name}_{stat}"] for stat in ("mean", "std")
+        } for name in transitions},
+        "mouse_isolated_move_ratio": f["mouse_isolated_move_ratio"],
         "click_x_std": f["click_x_std"],
         "click_y_std": f["click_y_std"],
         "click_bbox_area_frac": f["click_bbox_area_frac"],
@@ -327,8 +395,6 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
         "backspace_delete_count": f["backspace_delete_count"],
         "backspace_delete_ratio": f["backspace_delete_ratio"],
         "structural_key_ratio": f["structural_key_ratio"],
-        "mean_key_iei_ms": f["mean_key_iei_ms"],
-        "std_key_iei_ms": f["std_key_iei_ms"],
     }
     scroll_behavior = {
         "scroll_count": f["scroll_count"],
@@ -339,22 +405,24 @@ def format_l3(raw: dict[str, Any]) -> dict[str, Any]:
         "scroll_time": {stat: f[f"scroll_time_{stat}"] for stat in stats},
     }
     return {
-        "schema": "agent-fingerprint-browser-features/v2",
+        "schema": SCHEMA,
         "run_id": raw.get("run_id"),
         "feature_count": len(f),
+        "feature_names": list(FEATURE_NAMES),
         "features": f,
         "feature_vector": list(f.values()),
         "mouse_movement_behavior": movement,
         "mouse_button_behavior": buttons,
         "keyboard_typing_behavior": keyboard,
         "scroll_behavior": scroll_behavior,
+        "episode_behavior": episode,
     }
 
 
 def main():
     a = parser(__doc__).parse_args()
     s, d = paths(a.task_id, a.input_dir, a.output_dir, "l3_browser_dynamic.json")
-    write_json(d, format_l3(read_json(s)))
+    write_json(d, format_l3(read_json(s), load_run_metadata(s)))
 
 
 if __name__ == "__main__":

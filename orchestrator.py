@@ -351,7 +351,7 @@ def _build_runner(args: argparse.Namespace) -> PipelineRunner:
         # that final batch after the operator presses Enter.
         trace_grace_seconds=0.5 if manual_only else 0.15,
         trace_finalize_timeout_seconds=args.trace_finalize_timeout,
-        agent_timeout=args.timeout if args.timeout is not None else 900.0,
+        agent_timeout=args.timeout if args.timeout is not None else 1800.0,
     )
 
 

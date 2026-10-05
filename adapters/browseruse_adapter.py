@@ -381,7 +381,7 @@ async def main():
             "tools": make_tools(),
             # The proxy can take longer than browser-use's 75-second default.
             # The parent process still enforces the total task timeout.
-            "llm_timeout": float(os.environ.get("BROWSER_USE_LLM_TIMEOUT", "180")),
+            "llm_timeout": float(os.environ.get("BROWSER_USE_LLM_TIMEOUT", "1200")),
         }
         if browser is not None:
             agent_kwargs["browser"] = browser
@@ -464,11 +464,8 @@ async def main():
         }
         (output_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(result, ensure_ascii=False))
-        # Keep a failed task distinguishable from a clean process exit.  The
-        # parent also reads result.json, so this non-zero code is mainly useful
-        # to callers invoking the runner directly.
-        if task_success is False:
-            raise SystemExit(3)
+        # A judge rejection is a task verdict, not a process failure. The
+        # parent retains it alongside the independent completion evidence.
     finally:
         if agent is not None:
             # Browser-use may leave its internally-created browser alive until

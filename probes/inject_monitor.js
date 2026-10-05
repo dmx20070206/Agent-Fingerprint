@@ -250,6 +250,7 @@
     var rect = typeof element.getBoundingClientRect === "function" ? element.getBoundingClientRect() : null;
     var info = {
       tag: element.tagName.toLowerCase(),
+      href: element.getAttribute("href"),
       id: element.id || null,
       role: element.getAttribute("role"),
       name: element.getAttribute("name"),
@@ -598,7 +599,7 @@
     // DOM mutation events are intentionally not part of the behavioral trace.
     // Do not install a MutationObserver: page/framework rendering would
     // otherwise dominate the interaction signal.
-    record("monitor_start", { static_fingerprint: staticFingerprint() });
+    record("monitor_start", { static_fingerprint: staticFingerprint(), navigation_tracking: true });
     if (controlTimer !== null) global.clearInterval(controlTimer);
     controlTimer = global.setInterval(pollControl, CONTROL_POLL_MS);
     pollControl();
@@ -708,6 +709,22 @@
   global.clearLog = function (logId) {
     record("app_event", { log_id: logId, event: "clear", detail: "log cleared" });
   };
+  // Same-document history changes do not install a new document monitor.
+  global.addEventListener("popstate", function () {
+    if (active) record("navigation", { reason: "popstate" });
+  }, true);
+  if (global.history) {
+    ["pushState", "replaceState"].forEach(function (name) {
+      var original = global.history[name];
+      if (typeof original !== "function") return;
+      global.history[name] = function () {
+        var before = global.location.href;
+        var result = original.apply(this, arguments);
+        if (active && global.location.href !== before) record("navigation", { reason: name });
+        return result;
+      };
+    });
+  }
   global.addEventListener("beforeunload", onPageHide, true);
   global.addEventListener("pagehide", onPageHide, true);
   document.addEventListener("visibilitychange", function () {

@@ -66,8 +66,7 @@ async def main():
             "wait_for_completion": True}
     if os.environ.get("SKYVERN_MAX_STEPS"):
         call["max_steps"] = int(os.environ["SKYVERN_MAX_STEPS"])
-    if os.environ.get("SKYVERN_TIMEOUT"):
-        call["timeout"] = float(os.environ["SKYVERN_TIMEOUT"])
+    call["timeout"] = float(os.environ.get("SKYVERN_TIMEOUT", "1800"))
     try:
         result = await client.run_task(**call)
         def value(name, default=None):
@@ -123,7 +122,6 @@ async def main():
         encoded = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
         (output_dir / "result.json").write_text(encoded, encoding="utf-8")
         print(json.dumps(payload, ensure_ascii=False, default=str))
-        if success is False: raise SystemExit(3)
     finally:
         await client.aclose()
 

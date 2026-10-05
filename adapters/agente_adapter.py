@@ -41,7 +41,7 @@ if model and api_base:
     }
 payload = json.dumps(payload_data).encode("utf-8")
 request = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-with urllib.request.urlopen(request, timeout=float(os.environ.get("AGENTE_HTTP_TIMEOUT", "300"))) as response:
+with urllib.request.urlopen(request, timeout=float(os.environ.get("AGENTE_HTTP_TIMEOUT", "1800"))) as response:
     body = response.read()
 output = Path(os.environ["AGENT_OUTPUT_DIR"])
 output.joinpath("response.txt").write_bytes(body)
@@ -66,7 +66,7 @@ task_status = {
     "transaction_done": "completed",
     "max_turns_reached": "max_turns_reached",
     "error": "error",
-}.get(terminal_type)
+}.get(terminal_type, "incomplete")
 result = {
     "endpoint": endpoint,
     "bytes": len(body),
@@ -127,7 +127,7 @@ class AgentEAdapter(BaseAgentAdapter):
                 "AGENTE_ENDPOINT": self.endpoint_url,
                 "AGENTE_COMMAND": command_text,
                 "AGENTE_RUN_ID": output_path.name,
-                "AGENTE_HTTP_TIMEOUT": str(self.http_timeout or self.timeout or 300),
+                "AGENTE_HTTP_TIMEOUT": str(self.http_timeout or self.timeout or 1800),
                 "AGENT_OUTPUT_DIR": str(output_path),
             }
         )

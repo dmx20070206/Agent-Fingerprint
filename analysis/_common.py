@@ -36,6 +36,8 @@ def resolve_run_dir(task_id, input_dir):
                 entry = json.loads(line)
             except (json.JSONDecodeError, TypeError):
                 continue
+            if not isinstance(entry, dict):
+                continue
             if entry.get("run_id") != task_id or not isinstance(entry.get("path"), str):
                 continue
             candidate = (input_root / entry["path"]).resolve()
@@ -45,6 +47,13 @@ def resolve_run_dir(task_id, input_dir):
                 continue
             if candidate.is_dir():
                 return candidate
+    # Curated runs can be grouped by task/agent/model without an index.
+    matches = sorted({p.parent.resolve() for p in input_root.rglob("manifest.json")
+                      if p.parent.name == task_id and p.parent.resolve().is_relative_to(input_root)})
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        raise ValueError(f"ambiguous run ID {task_id}: {matches}; narrow --input-dir")
     raise FileNotFoundError(f"run not found: {task_id}")
 
 

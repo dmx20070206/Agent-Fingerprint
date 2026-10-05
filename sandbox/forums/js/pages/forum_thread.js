@@ -1,6 +1,7 @@
 import { countWebsiteVersion, postComplete, redirectToCompletionPage } from '../script.js';
 
 export function init() {
+    document.body.dataset.taskStatus = "pending";
     const websiteVersion = "";
     // Load forums.css
     if (!document.querySelector('link[href*="forums.css"]')) {
@@ -85,6 +86,7 @@ export function init() {
         // Re-render the thread
         const updatedThread = findThread(threads, threadId);
         renderThread(container, updatedThread, threads);
+        document.body.dataset.taskStatus = "passed";
         postComplete({ "webpage": "forums" });
         if (websiteVersion === countWebsiteVersion) {
             let forumCounts = Number(localStorage.getItem("forums"));

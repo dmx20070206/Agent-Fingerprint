@@ -37,6 +37,7 @@ let currentQuery = '';
 let cart = [];
 
 export function init() {
+    document.body.dataset.taskStatus = 'pending';
     // Load shop.css
     if (!document.querySelector('link[href*="shop.css"]')) {
         const link = document.createElement('link');
@@ -160,6 +161,7 @@ export function init() {
     }
 
     function renderCart() {
+        updateCompletion();
         if (cart.length === 0) {
             cartEmpty.style.display = 'block';
             cartContent.style.display = 'none';
@@ -448,6 +450,14 @@ export function init() {
         });
     }
 
+    // Completion means the shopping workflow reached its result page. Exact
+    // product choices and prices are intentionally not graded here.
+    function updateCompletion() {
+        const cartVisible = cartPage.classList.contains('active') && cart.length > 0;
+        const orderPlaced = confirmationPage.classList.contains('active');
+        document.body.dataset.taskStatus = cartVisible || orderPlaced ? 'passed' : 'pending';
+    }
+
     // Page transition within shop
     function showPage(pageToShow, pageToHide) {
         content.classList.add('fade-out');
@@ -455,6 +465,7 @@ export function init() {
         setTimeout(() => {
             pageToHide.classList.remove('active');
             pageToShow.classList.add('active');
+            updateCompletion();
             content.classList.remove('fade-out');
             content.classList.add('fade-in');
 

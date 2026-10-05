@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import html as html_module
 import http.server
 import json
 import mimetypes
@@ -30,6 +31,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Optional
 
+from completion import CompletionVerifier
+
 SANDBOX_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = SANDBOX_ROOT / "static"
 DEFAULT_HOST = "127.0.0.1"
@@ -37,6 +40,8 @@ DEFAULT_PORT = 8000
 DEFAULT_INTERACTION_DELAY_SECONDS = 0
 MONITOR_ENDPOINT = "/__agent_fingerprint__/events"
 MONITOR_SCRIPT_ENDPOINT = "/__agent_fingerprint__/monitor.js"
+COMPLETION_ENDPOINT = "/__agent_fingerprint__/completion"
+COMPLETION_SCRIPT_ENDPOINT = "/__agent_fingerprint__/completion.js"
 SITE_POST_ENDPOINTS = {
     "/complete",
     "/complete_update",
@@ -243,6 +248,7 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         interaction_delay_ms=0,
     ):
         self.trace_store = trace_store or TraceStore()
+        self.completion_verifier = CompletionVerifier()
         self.inject_monitor = bool(inject_monitor)
         self.run_id = run_id
         self.interaction_delay_ms = int(interaction_delay_ms)
@@ -272,6 +278,10 @@ class SandboxRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == COMPLETION_SCRIPT_ENDPOINT:
+            path = self.monitor_path.with_name("completion_monitor.js")
+            self._send_bytes(path.read_bytes(), "application/javascript; charset=utf-8")
+            return
         if parsed.path == MONITOR_SCRIPT_ENDPOINT:
             try:
                 body = self.monitor_path.read_bytes()
@@ -293,13 +303,37 @@ class SandboxRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return
             self._json_response(self.server.trace_store.export(run_id))
             return
-        if getattr(self.server, "inject_monitor", False) and parsed.path.lower().endswith((".html", ".htm")):
+        # Completion collection remains enabled when L2/L3 monitoring is off.
+        if parsed.path.lower().endswith((".html", ".htm")):
             self._serve_html_with_monitor(parsed.path)
             return
+        if parsed.path.endswith("/"):
+            index = Path(self.translate_path(parsed.path)) / "index.html"
+            if index.is_file():
+                self._serve_html_file_with_monitor(index)
+                return
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == COMPLETION_ENDPOINT:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 4096:
+                    raise ValueError("invalid completion payload size")
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError("completion payload must be an object")
+                if payload.get("run_id") != self.server.run_id:
+                    raise ValueError("completion belongs to a different run")
+                accepted = self.server.completion_verifier.observe(
+                    self.server.run_id, payload.get("document_id"),
+                    payload.get("sequence"), payload.get("status"),
+                )
+                self._json_response({"ok": accepted})
+            except (ValueError, TypeError, UnicodeDecodeError) as exc:
+                self._json_response({"ok": False, "error": str(exc)}, 400)
+            return
         if parsed.path in SITE_POST_ENDPOINTS:
             # The upstream deployment persisted these events to PostgreSQL.
             # Locally, the injected project monitor is the source of truth.
@@ -347,6 +381,15 @@ class SandboxRequestHandler(http.server.SimpleHTTPRequestHandler):
         except UnicodeDecodeError:
             super().do_GET()
             return
+        # SPA routers fetch HTML fragments and insert them into the current
+        # document. Such a fetch must not replace that document's verifier
+        # token (and injected scripts would not execute via innerHTML anyway).
+        destination = self.headers.get("Sec-Fetch-Dest")
+        if destination not in {None, "document", "iframe"} or (
+            destination is None and not any(tag in html.lower() for tag in ("<html", "<body", "<!doctype"))
+        ):
+            self._send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
+            return
         query = urllib.parse.urlencode({"run_id": self.server.run_id})
         host = self.headers.get("Host") or f"{self.server.server_address[0]}:{self.server.server_address[1]}"
         monitor_endpoint = f"http://{host}{MONITOR_ENDPOINT}"
@@ -363,6 +406,16 @@ class SandboxRequestHandler(http.server.SimpleHTTPRequestHandler):
             + ";</script>"
             + f'<script src="{MONITOR_SCRIPT_ENDPOINT}?{query}"></script>'
         )
+        if not self.server.inject_monitor:
+            bootstrap = ""
+        if self.headers.get("Sec-Fetch-Dest") != "iframe":
+            token = self.server.completion_verifier.begin_document(self.server.run_id, self.path)
+            config = html_module.escape(json.dumps({
+                "endpoint": COMPLETION_ENDPOINT,
+                "run_id": self.server.run_id,
+                "document_id": token,
+            }), quote=True)
+            bootstrap += f'<script src="{COMPLETION_SCRIPT_ENDPOINT}" data-completion="{config}"></script>'
         lower = html.lower()
         head_start = lower.find("<head")
         head_open_end = html.find(">", head_start) if head_start >= 0 else -1

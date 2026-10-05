@@ -122,6 +122,12 @@ else:
 
 def _make_client(cfg, vision=None, capability_model=None):
     client_kwargs = dict(cfg)
+    # AutoGen forwards this to the OpenAI client.  Relay services may spend
+    # several minutes queueing a multimodal request before producing tokens.
+    try:
+        client_kwargs.setdefault("timeout", float(os.environ.get("AUTOGEN_LLM_TIMEOUT", "1200")))
+    except ValueError:
+        raise ValueError("AUTOGEN_LLM_TIMEOUT must be a number")
     # The OpenAI SDK's default retry backoff can sleep for roughly a minute
     # after each failed upstream request, making a task appear hung.  One
     # attempt is preferable for the orchestrator, which can record the error
@@ -639,8 +645,8 @@ async def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))
-    if task_success is False:
-        raise SystemExit(3)
+    if task_status == "error":
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     try:

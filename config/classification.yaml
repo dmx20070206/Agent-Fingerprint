@@ -1,0 +1,5 @@
+# Paths are relative to the repository root; use a fresh output directory per experiment.
+dataset: data/datasets/l3_v4/samples.json
+folds: 5
+seed: 42
+regularization_c: 1.0
