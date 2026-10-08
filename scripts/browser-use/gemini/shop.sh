@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent browseruse \
-  --model gemini \
-  --sandbox-directory sandbox/shop \
-  --task-file tasks/shop.jsonl \
-  --run-id browseruse_gemini_shop \
-  --no-network-probe \
-  --timeout 900
-
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents browseruse --models gemini --tasks shop --repeats 1 "$@"

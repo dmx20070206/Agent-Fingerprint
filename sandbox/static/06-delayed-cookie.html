@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>延迟状态面板</title>
+</head>
+<body>
+  <h1>延迟状态面板</h1>
+  <p id="notice">等待状态更新</p>
+  <button id="dismiss" type="button" disabled>稍后关闭</button>
+  <script>
+    const notice = document.getElementById("notice");
+    const dismiss = document.getElementById("dismiss");
+    window.setTimeout(() => {
+      notice.textContent = "状态已加载";
+      dismiss.disabled = false;
+    }, 500);
+    let elapsed = 0;
+    const timer = window.setInterval(() => {
+      elapsed += 1;
+      if (elapsed >= 10) window.clearInterval(timer);
+    }, 1000);
+    dismiss.addEventListener("click", () => {
+      notice.textContent = "状态面板已关闭";
+      dismiss.disabled = true;
+    });
+  </script>
+</body>
+</html>

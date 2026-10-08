@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent browseruse \
-  --model chat-gpt \
-  --sandbox-directory sandbox/flights \
-  --task-file tasks/flights.jsonl \
-  --run-id browseruse_chat_gpt_flights \
-  --no-network-probe \
-  --timeout "${BROWSER_USE_FLIGHTS_TIMEOUT:-3600}"
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents browseruse --models chat-gpt --tasks flights --repeats 1 "$@"

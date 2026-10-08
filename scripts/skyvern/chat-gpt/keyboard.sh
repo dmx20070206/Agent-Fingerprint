@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent skyvern \
-  --model chat-gpt \
-  --sandbox-directory sandbox/static \
-  --task-file tasks/keyboard_type.jsonl \
-  --run-id skyvern_chat_gpt_keyboard \
-  --max-steps 50 \
-  --no-network-probe \
-  --timeout 900
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents skyvern --models chat-gpt --tasks keyboard --repeats 1 "$@"

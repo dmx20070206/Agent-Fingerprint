@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent skyvern \
-  --model claude \
-  --sandbox-directory sandbox/forums \
-  --task-file tasks/forums.jsonl \
-  --run-id skyvern_claude_forums \
-  --max-steps 50 \
-  --no-network-probe \
-  --timeout 900
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents skyvern --models claude --tasks forums --repeats 1 "$@"

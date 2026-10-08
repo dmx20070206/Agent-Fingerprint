@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>极简控制台</title>
+</head>
+<body>
+  <main>
+    <h1>极简控制台</h1>
+    <p>用于验证浏览器 Agent 的基础页面访问与点击采集。</p>
+    <button type="button" id="confirm">确认</button>
+    <output id="result" aria-live="polite">等待操作</output>
+  </main>
+  <script>
+    document.getElementById("confirm").addEventListener("click", () => {
+      document.getElementById("result").textContent = "操作已确认";
+    });
+  </script>
+</body>
+</html>

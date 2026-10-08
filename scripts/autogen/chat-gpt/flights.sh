@@ -1,14 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent autogen \
-  --model chat-gpt \
-  --sandbox-directory sandbox/flights \
-  --task-file tasks/flights.jsonl \
-  --run-id autogen_chat_gpt_flights \
-  --max-steps 50 \
-  --autogen-screenshots \
-  --autogen-trace \
-  --no-network-probe \
-  --timeout "${AUTOGEN_FLIGHTS_TIMEOUT:-3600}"
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents autogen --models chat-gpt --tasks flights --repeats 1 "$@"

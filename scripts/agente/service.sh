@@ -83,7 +83,7 @@ start_agente_service() {
     fi
 
     local agent_env=${AGENTE_CONDA_ENV:-agent-e}
-    local agent_repo="$repo_root/lib/Agent-E"
+    local agent_repo="$repo_root/third_party/Agent-E"
     if [[ ! -d "$agent_repo/ae" ]]; then
         printf 'Cannot start Agent-E: source directory does not exist: %s\n' "$agent_repo" >&2
         return 1

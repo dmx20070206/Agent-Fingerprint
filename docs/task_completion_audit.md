@@ -1,5 +1,7 @@
 # 五个 Agent 框架的完成判定审查
 
+[文档导航](README.md) · **历史审查**：以下结论和源码行为以 2026-10-03 的审查为限。当前采集方式见[采集指南](collection.md)；本地证据文件不随 Git 分发。
+
 `data/runs/final` 的 96 个目录已另行完成逐项审计，见 [final 测试分类总表](final_task_audit.md)。该表包含每个目录的分类、原因和独立证据记录；final 数据的具体分类以该表为准。
 
 审查日期：2026-10-03。结论：存在成功后未停止、正常结束却标失败、结果未知却标成功，以及填错信息仍判成功四类问题。不能把这些情况统一归为任务执行能力不足。
@@ -25,7 +27,7 @@
 - 第 90 个动作 `Type [2]; 854` 自动按 Enter，付款表单随即提交。
 - [screenshot91.png](../data/runs/2026-10-03/webvoyager_deepseek_flights/artifacts/framework/20261003_18_26_13/tasksingle/screenshot91.png) 已显示预订成功。
 - Agent 仍认为位于付款页，继续点击和输入，触发 `list index out of range`；耗尽 100 步后退出码为 3。
-- `lib/WebVoyager/run.py` 通过 `ANSWER` 或 `page_reports_success()` 结束；后者读取 `body.dataset.taskStatus`。当时航班页面没有发布该标记。
+- `third_party/WebVoyager/run.py` 通过 `ANSWER` 或 `page_reports_success()` 结束；后者读取 `body.dataset.taskStatus`。当时航班页面没有发布该标记。
 
 此前已补齐航班页面 `pending → passed` 协议，真实浏览器验证按钮与 Enter 提交均能被现有 WebVoyager 检测函数识别。历史记录未被修改，尚未重跑完整 LLM 任务。其他失败中常见的下拉框循环、模型请求错误和中断不能据此判为同一问题。
 
@@ -48,8 +50,8 @@
 
 两个缺陷串联：
 
-1. `lib/Agent-E/ae/server/api_routes.py` 会发出 `transaction_done` 或 `max_turns_reached`。
-2. `lib/Agent-E/ae/core/playwright_manager.py::notify_user()` 在调用通知管理器之前，先按 UI 消息白名单过滤；两种 overlay 配置都不允许 DONE、MAX_TURNS_REACHED、ERROR。终止事件因而不会进入 SSE。提取当前函数并用最小桩执行，确认三类事件在两种配置下均发送 0 条。
+1. `third_party/Agent-E/ae/server/api_routes.py` 会发出 `transaction_done` 或 `max_turns_reached`。
+2. `third_party/Agent-E/ae/core/playwright_manager.py::notify_user()` 在调用通知管理器之前，先按 UI 消息白名单过滤；两种 overlay 配置都不允许 DONE、MAX_TURNS_REACHED、ERROR。终止事件因而不会进入 SSE。提取当前函数并用最小桩执行，确认三类事件在两种配置下均发送 0 条。
 3. `adapters/agente_adapter.py` 找不到终止事件时写入 `task_success=None`；`adapters/base_adapter.py::AgentResult.success` 使用 `returncode == 0 and task_success is not False`，将未知结果算作成功。
 
 86 份目录记录未检出上述结构化终止事件。61 条 success 中，25 条响应最后停在 `step`，对应 18 组不同 started_at；这些只能标为缺少完成证据，不能全部断言任务失败。

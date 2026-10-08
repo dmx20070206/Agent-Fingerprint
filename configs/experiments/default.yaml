@@ -1,0 +1,79 @@
+schema: agent-fingerprint-experiment/v1
+matrix:
+  agents:
+  - browseruse
+  - webvoyager
+  - skyvern
+  - autogen
+  - agente
+  models:
+  - chat-gpt
+  - claude
+  - gemini
+  - deepseek-chat
+  tasks:
+  - flights
+  - shop
+  - forums
+repeats: 5
+defaults:
+  no-network-probe: true
+  timeout: 900
+agents:
+  browseruse: {}
+  webvoyager: {}
+  skyvern:
+    max-steps: 50
+  autogen:
+    max-steps: 50
+  agente:
+    max-steps: 50
+models:
+  chat-gpt: {}
+  claude: {}
+  gemini: {}
+  deepseek-chat: {}
+tasks:
+  flights:
+    task-file: tasks/flights.jsonl
+    sandbox-directory: sandbox/flights
+    site: flights
+  forums:
+    task-file: tasks/forums.jsonl
+    sandbox-directory: sandbox/forums
+    site: forum
+  keyboard:
+    task-file: tasks/keyboard_type.jsonl
+    sandbox-directory: sandbox/static
+    site: keyboard
+  mouse_click:
+    task-file: tasks/mouse_click.jsonl
+    sandbox-directory: sandbox/static
+    site: mouse_click
+  mouse_move:
+    task-file: tasks/mouse_move.jsonl
+    sandbox-directory: sandbox/static
+    site: mouse_move
+  shop:
+    task-file: tasks/shop.jsonl
+    sandbox-directory: sandbox/shop
+    site: shop
+  wheel_scroll:
+    task-file: tasks/wheel_scroll.jsonl
+    sandbox-directory: sandbox/static
+    site: wheel_scroll
+  mouse_move2:
+    task-file: tasks/mouse_move2.jsonl
+    sandbox-directory: sandbox/static
+    site: mouse_move2
+overrides:
+  agente/chat-gpt/flights:
+    timeout: ${AGENTE_FLIGHTS_TIMEOUT:-3600}
+  autogen/chat-gpt/flights:
+    autogen-screenshots: true
+    autogen-trace: true
+    timeout: ${AUTOGEN_FLIGHTS_TIMEOUT:-3600}
+  browseruse/chat-gpt/flights:
+    timeout: ${BROWSER_USE_FLIGHTS_TIMEOUT:-3600}
+  browseruse/deepseek-chat/flights:
+    max-steps: 100

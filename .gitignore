@@ -13,3 +13,11 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 temp/
+
+# Third-party checkouts are restored from third_party/lock.json and patches.
+/third_party/WebVoyager/
+/third_party/Agent-E/
+/third_party/skyvern/
+/src/*.egg-info/
+/build/
+/dist/

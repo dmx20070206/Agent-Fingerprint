@@ -1,7 +1,0 @@
-# Dependencies for the scheduler, sandbox, LiteLLM gateway and tests.
-# Use Python 3.11+ (see environment.yml); current LiteLLM proxy releases rely
-# on typing features that are not present in Python 3.10.
-PyYAML>=6.0,<7
-python-dotenv>=1.0,<2
-litellm[proxy]>=1.60,<2
-pytest>=8,<10

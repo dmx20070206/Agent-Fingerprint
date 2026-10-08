@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent autogen \
-  --model chat-gpt \
-  --sandbox-directory sandbox/static \
-  --task-file tasks/mouse_move.jsonl \
-  --run-id autogen_chat_gpt_mouse_move \
-  --max-steps 50 \
-  --no-network-probe \
-  --timeout 900
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents autogen --models chat-gpt --tasks mouse_move --repeats 1 "$@"

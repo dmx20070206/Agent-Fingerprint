@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>鼠标点击序列测试</title>
+</head>
+<body data-task-status="pending">
+  <main>
+    <h1>信号按钮序列</h1>
+    <p>依次点击：3 → 1 → 4 → 2</p>
+    <div id="buttons"></div>
+    <p id="result" aria-live="polite">等待输入</p>
+  </main>
+  <script>
+    const expected = ["3", "1", "4", "2"];
+    const buttons = document.getElementById("buttons");
+    const result = document.getElementById("result");
+    let index = 0;
+    for (let i = 1; i <= 4; i += 1) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.key = String(i);
+      button.textContent = `信号 ${i}`;
+      button.addEventListener('click', () => {
+        if (document.body.dataset.taskStatus === "passed") return;
+        if (button.dataset.key !== expected[index]) {
+          index = 0;
+          result.textContent = "顺序错误，请重新开始";
+          return;
+        }
+        index += 1;
+        if (index === expected.length) {
+          document.body.dataset.taskStatus = "passed";
+          result.textContent = "通过：点击序列正确";
+        }
+      });
+      buttons.append(button, document.createTextNode(" "));
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>滚轮归档任务</title>
+  <style>
+    body { min-height: 240vh; font-family: sans-serif; }
+    section { min-height: 70vh; padding: 2rem; border-bottom: 1px solid #888; }
+  </style>
+</head>
+<body data-task-status="pending">
+  <section><h1>滚轮归档任务</h1><p>只使用鼠标滚轮向下阅读。</p></section>
+  <section><h2>中间记录</h2><p>继续滚动查看后续记录。</p></section>
+  <section><h2>最终归档点</h2><p>抵达页面底部以完成任务。</p></section>
+  <p id="result" aria-live="polite">等待滚动</p>
+  <script>
+    let wheelUsed = false;
+    const result = document.getElementById("result");
+    function checkArchive() {
+      const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+      if (wheelUsed && atBottom) {
+        document.body.dataset.taskStatus = "passed";
+        result.textContent = "通过：滚轮轨迹与页面深度均已确认";
+      }
+    }
+    document.addEventListener('wheel', event => {
+      if (event.deltaY > 0) wheelUsed = true;
+      checkArchive();
+    }, { passive: true });
+    window.addEventListener("scroll", checkArchive, { passive: true });
+  </script>
+</body>
+</html>

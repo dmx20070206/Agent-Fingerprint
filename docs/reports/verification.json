@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-06",
+  "baseline_commit": "1f822c0bd8dfa6a64966fc8549ee05b6617bd143",
+  "files_checked": 222,
+  "raw_events": 67419,
+  "semantic_actions": 5144,
+  "action_counts": {
+    "TEXT_ENTRY": 933,
+    "SUBMIT": 499,
+    "SELECT": 471,
+    "CLICK": 1619,
+    "SCROLL": 1453,
+    "NAVIGATE": 1,
+    "TOGGLE": 168
+  },
+  "v5_matches_baseline": true,
+  "source_spans_within_one_hard_boundary_block": true,
+  "nonnegative_or_null_timing": true
+}

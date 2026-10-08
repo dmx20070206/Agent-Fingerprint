@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分层路线迷宫</title>
+  <style>
+    .level { margin: 1rem; padding: 1rem; border: 1px solid #888; }
+  </style>
+</head>
+<body>
+  <h1>分层路线迷宫</h1>
+  <main id="maze"></main>
+  <script>
+    const maze = document.getElementById("maze");
+    for (let i=1;i<=20;i+=1) {
+      const level = document.createElement("section");
+      level.className = "level";
+      level.id = `level-${i}`;
+      level.innerHTML = `<h2>路线 ${i}</h2><a href="#level-${i + 1}">继续探索</a>`;
+      maze.append(level);
+    }
+  </script>
+</body>
+</html>

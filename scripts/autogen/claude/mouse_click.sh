@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent autogen \
-  --model claude \
-  --sandbox-directory sandbox/static \
-  --task-file tasks/mouse_click.jsonl \
-  --run-id autogen_claude_mouse_click \
-  --max-steps 50 \
-  --no-network-probe \
-  --timeout 900
-
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents autogen --models claude --tasks mouse_click --repeats 1 "$@"

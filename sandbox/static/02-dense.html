@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>高密度目录</title>
+</head>
+<body>
+  <h1>高密度目录</h1>
+  <main id="items"></main>
+  <script>
+    const items = document.getElementById("items");
+    for (let i=1;i<=500;i+=1) {
+      const link = document.createElement("a");
+      link.href = `#item-${i}`;
+      link.id = `item-${i}`;
+      link.textContent = `目录项目 ${i}`;
+      items.append(link, document.createElement("br"));
+    }
+  </script>
+</body>
+</html>

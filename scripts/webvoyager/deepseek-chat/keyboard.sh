@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent webvoyager \
-  --model deepseek-chat \
-  --sandbox-directory sandbox/static \
-  --task-file tasks/keyboard_type.jsonl \
-  --run-id webvoyager_deepseek_keyboard \
-  --no-network-probe \
-  --timeout 900
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents webvoyager --models deepseek-chat --tasks keyboard --repeats 1 "$@"

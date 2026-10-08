@@ -1,0 +1,34 @@
+{
+  "schema": "agent-fingerprint-vendor/v1",
+  "repositories": [
+    {
+      "name": "WebVoyager",
+      "url": "git@github.com:MinorJerry/WebVoyager.git",
+      "commit": "5a7896738c10bfb8b9edccce6bb0e0411f8ae569",
+      "patch": "patches/WebVoyager.patch",
+      "patch_sha256": "030bf874827bc56ec449e7b8c5a539cf755c6f94821040b8cee201948c97d6f0",
+      "local_only_files": []
+    },
+    {
+      "name": "Agent-E",
+      "url": "git@github.com:EmergenceAI/Agent-E.git",
+      "commit": "f218c3cb4b2b3e33ed08ea12da5514ab1e89cdd7",
+      "patch": "patches/Agent-E.patch",
+      "patch_sha256": "dc26542dcfe3b7b267a4d8380f8e3e9eedb9bfa8459219787b1f3291536bc30c",
+      "local_only_files": [
+        ".check-env-example"
+      ]
+    },
+    {
+      "name": "skyvern",
+      "url": "git@github.com:Skyvern-AI/skyvern.git",
+      "commit": "26bd1d2cc7e82d2f02a4765de645d4f58e7617d5",
+      "patch": "patches/skyvern.patch",
+      "patch_sha256": "e09d62ba78cc7ed71a2bedea0d0624d47208e0c8639236f4c6fea775f6ad4bc0",
+      "local_only_files": [
+        ".env.example",
+        "kubernetes-deployment/backend/backend-secrets.yaml"
+      ]
+    }
+  ]
+}

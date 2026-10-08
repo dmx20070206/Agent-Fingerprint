@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-# Skyvern's v2 planner consumes a JSON action object.
-export SKYVERN_LLM_PROTOCOL=json
-
-python orchestrator.py \
-  --agent skyvern \
-  --model gemini \
-  --sandbox-directory sandbox/flights \
-  --task-file tasks/flights.jsonl \
-  --run-id skyvern_gemini_flights \
-  --max-steps 50 \
-  --no-network-probe \
-  --timeout 900
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents skyvern --models gemini --tasks flights --repeats 1 "$@"

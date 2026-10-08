@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>键盘转录测试</title>
+</head>
+<body data-task-status="pending">
+  <main>
+    <h1>键盘转录区</h1>
+    <label for="transcript">输入指定的两行文本</label>
+    <textarea id="transcript" rows="4" autofocus></textarea>
+    <p id="result" aria-live="polite">等待输入</p>
+  </main>
+  <script>
+    const expected = "Agent Fingerprint\nMOVE CLICK TYPE SCROLL";
+    const input = document.getElementById("transcript");
+    const result = document.getElementById("result");
+    input.addEventListener('input', () => {
+      if (input.value === expected) {
+        document.body.dataset.taskStatus = "passed";
+        result.textContent = "通过：转录完全一致";
+      } else {
+        document.body.dataset.taskStatus = "pending";
+        result.textContent = "文本尚未匹配";
+      }
+    });
+  </script>
+</body>
+</html>

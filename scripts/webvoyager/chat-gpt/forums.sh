@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent webvoyager \
-  --model chat-gpt \
-  --sandbox-directory sandbox/forums \
-  --task-file tasks/forums.jsonl \
-  --run-id webvoyager_chat_gpt_forums \
-  --no-network-probe \
-  --timeout 900
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents webvoyager --models chat-gpt --tasks forums --repeats 1 "$@"

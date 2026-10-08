@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
 set -euo pipefail
-
-python orchestrator.py \
-  --agent webvoyager \
-  --model gemini \
-  --sandbox-directory sandbox/flights \
-  --task-file tasks/flights.jsonl \
-  --run-id webvoyager_gemini_flights \
-  --no-network-probe \
-  --timeout 900
-
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents webvoyager --models gemini --tasks flights --repeats 1 "$@"

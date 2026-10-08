@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-fingerprint"
+version = "0.2.0"
+description = "Reproducible browser-agent fingerprint collection and analysis"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6,<7", "python-dotenv>=1,<2"]
+
+[project.optional-dependencies]
+collection = ["litellm[proxy]>=1.60,<2"]
+analysis = ["numpy>=1.24,<3", "scikit-learn>=1.3,<2", "joblib>=1.3,<2", "matplotlib>=3.7,<4"]
+training = ["numpy>=1.24,<3", "scikit-learn>=1.3,<2", "xgboost>=2,<4", "torch>=2.2,<3"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
+
+[project.scripts]
+af = "agent_fingerprint.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"agent_fingerprint.collection.probes" = ["*.js"]
+"agent_fingerprint.semantic_actions" = ["*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["third_party", "lib", "data"]

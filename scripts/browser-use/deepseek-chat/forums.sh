@@ -1,8 +1,5 @@
-python orchestrator.py \
-  --agent browseruse \
-  --model deepseek-chat \
-  --sandbox-directory sandbox/forums \
-  --task-file tasks/forums.jsonl \
-  --run-id browseruse_deepseek_forums \
-  --no-network-probe \
-  --timeout 900
+#!/usr/bin/env bash
+# Compatibility wrapper; experiment settings live in configs/experiments/default.yaml.
+set -euo pipefail
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+exec bash "$repo_root/scripts/run_experiment.sh" --agents browseruse --models deepseek-chat --tasks forums --repeats 1 "$@"

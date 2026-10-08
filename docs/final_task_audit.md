@@ -1,5 +1,7 @@
 # final 测试逐项完成审计
 
+[文档导航](README.md) · **历史审计**：本文保留 2026-10-04 的逐项结果，不代表当前代码的完成判定。当前用法见[采集指南](collection.md)；本地证据文件不随 Git 分发。
+
 审计日期：2026-10-04。已记录 **96/96** 个目录。每完成一项即保存独立记录并刷新本表。
 
 当前汇总：完美成功 **63**；假成功 **27**；不好的成功 **6**。
@@ -30,7 +32,7 @@
 | shop / browseruse | 3 | 0 | 0 | 3 |
 | shop / skyvern | 5 | 5 | 0 | 0 |
 
-Agent-E 提前结束但记 success：当前适配层在未获得明确任务终态时保留 task_success=None，而 [AgentResult.success](../adapters/base_adapter.py) 接受 returncode=0 且 task_success 不是 False。证据支持“未完成却被接受”；不据此臆断每次提前结束的内部触发原因。
+Agent-E 提前结束但记 success：当前适配层在未获得明确任务终态时保留 task_success=None，而 [AgentResult.success](../src/agent_fingerprint/adapters/base_adapter.py) 接受 returncode=0 且 task_success 不是 False。证据支持“未完成却被接受”；不据此臆断每次提前结束的内部触发原因。
 
 Browser-use 重复验证：页面已有结果，但 verify_page_status 读到 taskStatus=None、resultText=None，部分运行继续请求同样的验证。已成功却原始 failed 的 DeepSeek 运行也保留原状态，并按实际行为分类。
 

@@ -1,5 +1,7 @@
 # data/experiments 实验结果分析
 
+[文档导航](README.md) · **历史分析**：本文针对两个 v3 实验（58 维），数字不代表当前 v5 / attribution 的结果。当前运行方式见[训练指南](attribution-training.md)。
+
 分析范围：`l3_v3_agent`、`l3_v3_llm` 两个已保存实验。原始模型、评估文件和运行数据均未修改；补充诊断保存于 [diagnostics.json](../data/results/experiments_review/diagnostics.json)，可用 [reproduce.py](../data/results/experiments_review/reproduce.py) 从仓库根目录复现。
 
 **结论：当前 L3 特征能很强地区分已见实验配置下的框架，但跨任务效果明显下降；LLM 标签有可识别信号，却高度依赖框架、任务和完成情况。现有结果不能证明跨任务的 100% 框架识别，也不能证明框架无关的 LLM 指纹。**
@@ -132,7 +134,7 @@ LLM 的五折准确率为 68.75%、93.75%、75.00%、86.67%、73.33%，波动较
 
 ## 7. 下一轮实验的优先顺序
 
-1. **修复 ID 并重新建数据集。** 先预览 `python -m analysis.normalize_run_ids --input-dir data/runs/final`；修复时保留来源审计，使用新输出目录重建，避免覆盖这两份历史实验。优先恢复 15 个有轨迹的遗漏样本和 Claude 的 5 个有效样本。
+1. **修复 ID 并重新建数据集。** 先预览 `python -m agent_fingerprint normalize --input-dir data/runs/final`；修复时保留来源审计，使用新输出目录重建，避免覆盖这两份历史实验。优先恢复 15 个有轨迹的遗漏样本和 Claude 的 5 个有效样本。
 2. **补齐框架 × LLM × 任务组合。** 尤其是 WebVoyager 的非 chat-gpt，以及 shop 的多模型样本；增加任务和采集批次，避免“看见框架就能猜模型”。
 3. **把随机 run 划分和泛化划分分别报告。** Agent 报告跨任务、跨 LLM、跨采集批次；LLM 报告跨框架及固定框架内的分类。每种划分都配同划分下的基线。
 4. **记录完成状态，分层评估。** 同时保留全轨迹和已完成轨迹的结果，检查类别之间的完成率差异，而不是直接按旧 manifest.success 筛选。
