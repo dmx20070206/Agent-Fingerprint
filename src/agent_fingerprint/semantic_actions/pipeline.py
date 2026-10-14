@@ -17,6 +17,14 @@ class ParseResult:
     reductions: list
     config: SemanticActionConfig
 
+    def to_sequences(self):
+        """Export only the whitelisted content and timing sequences."""
+        return {
+            "action_sequence_content": [[a.action_type, a.target_role] for a in self.actions],
+            "action_sequence_temporal": [[a.action_type, a.target_role, a.duration_ms,
+                                          a.inter_action_latency_ms] for a in self.actions],
+        }
+
     def to_dict(self, existing_statistics=None):
         result = {
             "schema": "semantic-actions/v1",
@@ -26,9 +34,7 @@ class ParseResult:
             "actions": [asdict(a) for a in self.actions],
             # Whitelisting makes metadata leakage impossible even as the
             # internal debug schema evolves. Timing has a separate view.
-            "action_sequence_content": [[a.action_type, a.target_role] for a in self.actions],
-            "action_sequence_temporal": [[a.action_type, a.target_role, a.duration_ms,
-                                          a.inter_action_latency_ms] for a in self.actions],
+            **self.to_sequences(),
             "audit": {"reductions": self.reductions,
                       "candidate_count": len(self.candidates),
                       "source_indices": "zero-based inclusive; raw_trace.events[start:end + 1]"},

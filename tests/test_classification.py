@@ -212,3 +212,34 @@ def test_shell_forwards_filters_and_rejects_regression_test_selection(tmp_path):
                             cwd=repo, env=env, capture_output=True, text=True)
     assert result.returncode != 0
     assert 'regression tests' in result.stderr
+
+
+def test_local_run_ids_train_and_independent_evaluation(tmp_path):
+    from agent_fingerprint.analysis.test_models import test_model as evaluate_saved
+    source = tmp_path / 'samples.json'
+    synthetic_dataset(source)
+    data = json.loads(source.read_text())
+    for i, row in enumerate(data['samples']):
+        row['run_id'] = f'run_{i // 2 + 1:04d}'
+        row['site_label'] = 'shop'
+        row['sample_id'] = f"shop/{row['agent_label']}/only-model/{row['run_id']}"
+        row['events_sha256'] = f'train-events-{i}'
+    write_json(source, data)
+    assert train(source, tmp_path / 'model', folds=3)['status'] == 'completed'
+    for i, row in enumerate(data['samples']):
+        row['site_label'] = 'flights'
+        row['sample_id'] = row['sample_id'].replace('shop/', 'flights/')
+        row['events_sha256'] = f'test-events-{i}'
+    independent = tmp_path / 'independent.json'
+    write_json(independent, data)
+    assert evaluate_saved(tmp_path / 'model/model.joblib', independent,
+                          tmp_path / 'evaluation.json')['status'] == 'completed'
+    data['samples'][0]['events_sha256'] = 'train-events-0'
+    write_json(independent, data)
+    with pytest.raises(ValueError, match='events_sha256'):
+        evaluate_saved(tmp_path / 'model/model.joblib', independent, tmp_path / 'bad.json')
+    data['samples'][0]['events_sha256'] = 'different'
+    data['samples'][0]['site_label'] = 'shop'
+    write_json(independent, data)
+    with pytest.raises(ValueError, match='scoped run_id'):
+        evaluate_saved(tmp_path / 'model/model.joblib', independent, tmp_path / 'bad.json')

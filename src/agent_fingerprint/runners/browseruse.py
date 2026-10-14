@@ -459,18 +459,35 @@ async def main():
             # process teardown, which is too abrupt for page lifecycle events.
             # Stop the in-page probe explicitly so its final in-memory batch is
             # queued through sendBeacon before the browser session is killed.
+            # Preserve the page-local copy as a fallback if an upload was lost.
+            snapshot = {"error": "Browser-use monitor snapshot was not captured", "events": []}
             try:
                 session = await agent.browser_session.get_or_create_cdp_session(focus=True)
-                await session.cdp_client.send.Runtime.evaluate(
+                response = await session.cdp_client.send.Runtime.evaluate(
                     params={
-                        "expression": "window.__agentFingerprintMonitor && window.__agentFingerprintMonitor.stop()",
+                        "expression": """(() => {
+                          const monitor = window.__agentFingerprintMonitor;
+                          if (!monitor) return null;
+                          monitor.stop(true);
+                          return monitor.export();
+                        })()""",
                         "returnByValue": True,
                     },
                     session_id=session.session_id,
                 )
-                await asyncio.sleep(0.1)
-            except Exception:
-                pass
+                snapshot = response.get("result", {}).get("value")
+                if not isinstance(snapshot, dict):
+                    snapshot = {"error": "Browser-use page did not return a monitor snapshot", "events": []}
+            except Exception as exc:
+                traceback.print_exc()
+                snapshot = {"error": f"{type(exc).__name__}: {exc}", "events": []}
+            try:
+                (output_dir / "browser_trace.json").write_text(
+                    json.dumps(snapshot, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except OSError:
+                traceback.print_exc()
             close = getattr(agent, "close", None)
             if callable(close):
                 closed = close()

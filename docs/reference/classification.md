@@ -1,6 +1,6 @@
 # 逻辑回归基线：train / test / predict
 
-[文档导航](README.md) · 当前四种表示实验：[attribution 训练指南](attribution-training.md)
+[文档导航](../README.md) · 当前四种表示实验：[attribution 训练指南](../workflow.md#训练与评估)
 
 本页用于原有逻辑回归流程。两种输入分别是 98 维统计特征（`statistics`）和 162 维语义统计（`semantic`）。每种输入分别预测 Agent 与 LLM，默认训练四个模型。
 语义统计由动作计数、目标计数、相邻动作转移和时间统计组成；这里不训练 Transformer。
@@ -14,7 +14,7 @@
 
 ## 逐步运行
 
-先按[安装说明](setup.md)安装 `analysis` 依赖，并准备足够的多类别运行。以下在仓库根目录执行，输出目录需为空。
+先按[安装说明](../quickstart.md)安装 `analysis` 依赖，并准备足够的多类别运行。以下在仓库根目录执行，输出目录需为空。
 
 ```bash
 # 1. 构建数据集
@@ -102,10 +102,10 @@ bash scripts/run_analysis.sh --help
 ```
 
 脚本的模型路径是 `data/experiments/l3_<run-name>_<agent或llm>/<statistics或semantic>/`，与 Python 默认目录层级不同；分步调用时沿用同一个入口及 `--run-name`。
-脚本 `prepare` 会实际整理，预览需加 `--dry-run`；Python `prepare` 默认预览，执行需加 `--apply`，见[数据整理](data-contract.md)。
+脚本 `prepare` 会实际整理，预览需加 `--dry-run`；Python `prepare` 默认预览，执行需加 `--apply`，见[数据整理](data.md)。
 
 ```bash
 python -m pytest tests/test_classification.py tests/test_dual_classification.py -q
 ```
 
-早期实验数字和旧脚本记录已移至[历史验证](reference/classification-history.md)，不作为当前运行结果。
+早期实验数字和旧脚本记录已移至[历史验证](../archive/classification-history.md)，不作为当前运行结果。

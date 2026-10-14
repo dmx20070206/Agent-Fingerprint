@@ -1,12 +1,72 @@
-# 语义解析实现与限制
+# 语义动作：原始事件 E → 高层动作 Z
 
-[文档导航](../README.md) · [使用指南](../semantic-actions.md)
+[文档导航](../README.md) · [训练指南](../workflow.md#训练与评估)
 
-本页用于调试解析器和核对规则。所有命令均在仓库根目录执行；日常转换只需使用指南中的 `extract` 命令。
+把原始点击、按键、滚动等事件（E）合并成输入、提交、滚动等动作（Z），不调用 LLM。例如，多次按键可以合成一次 `TEXT_ENTRY`。输出文件只保存语义动作的内容序列和时序序列。
+
+## 一条命令转换 raw JSON
+
+在仓库根目录运行，将 `<日期>/<run_id>` 替换为实际路径：
+
+```bash
+python -m agent_fingerprint extract \
+  --input-file "data/runs/<日期>/<run_id>/fingerprints/l3_browser_dynamic.json" \
+  --output-file data/results/semantic_demo/output.json \
+  --debug-output data/results/semantic_demo/debug.txt
+```
+
+`--output-file` 省略时，结果写入输入文件旁的 `<原文件名>.semantic.json`。输入可以是带 `events` 的 JSON 对象或事件数组。输入文件不会被覆盖。
+
+### 常用参数
+
+| 参数 | 说明 |
+| --- | --- |
+| `--input-file` | 原始 JSON 对象或事件数组 |
+| `--output-file` | 仅包含语义动作内容序列和时序序列的输出路径 |
+| `--debug-output` | 保存事件识别、动作合并过程，便于排查 |
+| `--semantic-config` | JSON 阈值覆盖文件，见下文 |
+| `--debug-session` | 只输出指定 session 的调试信息 |
+| `--task-id` | 按 run ID 查找已有运行，与 `--input-file` 二选一 |
+| `--input-dir`、`--output-dir` | run ID 模式的输入/输出根目录，默认 `data/runs`、`data/results` |
+
+`action_sequence_content` 的格式例如：
+
+```json
+[
+  ["TEXT_ENTRY", "TEXT_INPUT"],
+  ["SUBMIT", "OTHER"],
+  ["SCROLL", "PAGE"],
+  ["CLICK", "LINK"]
+]
+```
+
+原有调用方式保持可用：
+
+```bash
+python -m agent_fingerprint extract \
+  --task-id RUN_ID --input-dir data/runs --output-dir data/results
+```
+
+它继续生成 `data/results/RUN_ID/l3_browser_dynamic.json`（原 v5 格式），并新增同目录 `semantic_actions.json`。`--output-file` 可以单独指定语义文件路径，不改变原统计文件路径。
+
+## 结果先看哪里
+
+| 字段 | 内容 | 用途 |
+| --- | --- | --- |
+| `action_sequence_content` | `[action_type, target_role]` | 仅动作内容 |
+| `action_sequence_temporal` | `[action_type, target_role, duration_ms, inter_action_latency_ms]` | 动作内容与时间 |
+
+JSON 顶层只有上述两个字段，不再复制原始事件、统计特征或审计信息；没有动作时两个字段均为空数组。先看 `action_sequence_content` 是否得到预期动作，再用 `--debug-output` 生成的调试文本追溯原因。时间单位为毫秒，缺失值为 `null`。
+
+语义特征和序列读取代码继续使用相同的 `action_sequence_*` 字段。`dataset` 仍直接从原始运行计算统计特征、语义序列与文档边界，不依赖此精简输出中的审计数据。Python 解析 API 的完整结果仍可用于内部审计，见下文 Python API。
+
+## 调整阈值与深入排查
+
+一般使用默认阈值即可。需要调整时，创建 JSON 文件（例如 `{"T_SCROLL_GAP_MS": 350}`），通过 `--semantic-config` 传入；时间阈值单位为毫秒。该参数只作用于本次 extract，不会传给 dataset；dataset 使用默认语义配置。
 
 ## 输出字段与事件索引
 
-只将明确白名单生成的两个 `action_sequence_*` 字段分别提供给对应模型。`actions`、`raw_trace`、`audit`、置信度、目标 ID、按钮文字、URL、坐标和像素位移均不属于内容序列的模型输入。可选的粗粒度滚动方向、历史方向和导航 outcome 目前仅放在 `actions` 中。
+`extract` 输出文件只包含明确白名单生成的两个 `action_sequence_*` 字段，分别提供给对应模型。Python API 的完整结果还保留 `actions`、`raw_trace`、`audit` 等调试信息；这些信息以及置信度、目标 ID、按钮文字、URL、坐标和像素位移均不属于内容序列的模型输入。可选的粗粒度滚动方向、历史方向和导航 outcome 目前仅放在内部 `actions` 中。
 
 来源索引基于输入 `raw_trace.events`，从 0 开始、**两端包含**：
 
@@ -18,6 +78,8 @@ events[action["source_event_start_index"]:action["source_event_end_index"] + 1]
 
 ## Python API
 
+同样将下面的占位路径替换为实际 L3 文件。
+
 ```python
 import json
 from pathlib import Path
@@ -25,8 +87,9 @@ from pathlib import Path
 from agent_fingerprint.features.l3_browser_dynamic import format_l3
 from agent_fingerprint.semantic_actions import parse_semantic_actions, SemanticActionConfig
 
-raw = json.loads(Path("examples/semantic_actions/example_raw.json").read_text())
+raw = json.loads(Path("data/runs/<日期>/<run_id>/fingerprints/l3_browser_dynamic.json").read_text())
 result = parse_semantic_actions(raw, SemanticActionConfig(T_SCROLL_GAP_MS=300))
+sequences = result.to_sequences()  # extract 输出文件的两个序列字段
 document = result.to_dict(existing_statistics=format_l3(raw))
 text = result.to_json(existing_statistics=format_l3(raw))
 print(result.debug_trace())
@@ -84,10 +147,10 @@ Raw E → EventNormalizer → independent recognizers → candidate intervals
 | 被旧探针重命名的 pointercancel 等类型 | semantic_event_type，保留原统计使用的 type |
 
 `collector.py` 使用基础探针明确的 `AF_MONITOR_EXTENSION_API:1` 插件接口，拼接增强插件与基础脚本，不替换原实现片段。
-默认使用 legacy/v2，增强采集显式启用：
+新采集统一使用增强语义探针（`semantic/v1`），无需额外参数：
 
 ```bash
-python -m agent_fingerprint collect --manual --url /11-mouse-click.html --collector semantic/v1
+python -m agent_fingerprint collect --manual --url /11-mouse-click.html
 ```
 
 也可以生成独立探针：
@@ -96,8 +159,8 @@ python -m agent_fingerprint collect --manual --url /11-mouse-click.html --collec
 python -m agent_fingerprint extract --write-semantic-probe /tmp/semantic_monitor.js
 ```
 
-Python 服务入口支持 `create_server(..., collector_version="semantic/v1")`；PipelineRunner 使用同名参数。
-manifest 记录采集器版本及脚本校验和。每个服务器实例独立选择版本，不需要修改全局 handler 类。
+Python 服务入口 `create_server(...)` 和 `PipelineRunner(...)` 也统一使用增强探针，不再提供采集器版本选择参数。
+manifest 记录采集器版本 `semantic/v1` 及组合后脚本的校验和，与沙盒服务提供的探针一致。
 
 扩展仅在内存中比较文本，不上传实际 value 或其哈希；原探针自身已有的 key / text 等字段仍按原策略保留。新事件和更完整的滚动观测会影响**新采集数据**的统计数值，但相同 E 的 v5 计算结果完全不变。旧 JSON 不会被补写或重采样。
 

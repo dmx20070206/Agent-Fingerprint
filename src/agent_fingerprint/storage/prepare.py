@@ -15,7 +15,7 @@ def prepare_stable(root, *, apply=False, index=None):
         raise FileNotFoundError(root)
     index = Path(index).resolve() if index else root / "index.jsonl"
     previous = index.read_text(encoding="utf-8") if index.exists() else ""
-    current = {row["run_id"]: row for row in (json.loads(line) for line in previous.splitlines() if line.strip())}
+    current = {row["path"]: row for row in (json.loads(line) for line in previous.splitlines() if line.strip())}
     plans, entries, seen = [], [], set()
     for path in iter_run_manifests(root):
         source = path.parent
@@ -27,9 +27,10 @@ def prepare_stable(root, *, apply=False, index=None):
         for label in (run_id, agent, model, site):
             if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", label):
                 raise ValueError(f"Missing or unsafe manifest label: {label!r} ({source})")
-        if run_id in seen:
+        identity = (site, agent, model, run_id)
+        if identity in seen:
             raise ValueError(f"Duplicate run ID: {run_id}")
-        seen.add(run_id)
+        seen.add(identity)
         target = root / site / agent / model / run_id
         if target != source and target.exists():
             raise FileExistsError(target)
@@ -45,7 +46,7 @@ def prepare_stable(root, *, apply=False, index=None):
         entries.append(entry)
     if not plans:
         raise ValueError(f"No manifests found under {root}")
-    updates = [row for row in entries if current.get(row["run_id"]) != row]
+    updates = [row for row in entries if current.get(row["path"]) != row]
     normalized = normalize(root, run_ids={str(source): data["run_id"] for source, _, data, _ in plans})
     changes = [{"source": source.relative_to(root).as_posix(), "destination": target.relative_to(root).as_posix(),
                 "old_run_id": data["run_id"], "run_id": data["run_id"]}

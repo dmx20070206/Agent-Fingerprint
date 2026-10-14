@@ -1,4 +1,4 @@
-"""CLI implementation for extracting statistical features and semantic actions."""
+"""CLI implementation for extracting semantic action sequences."""
 import argparse
 from pathlib import Path
 
@@ -7,17 +7,15 @@ from agent_fingerprint.semantic_actions.schema import SemanticActionConfig
 
 
 def main(argv=None):
-    from agent_fingerprint.features.l3_browser_dynamic import format_l3
     from agent_fingerprint.analysis._common import paths, read_json, write_json
-    from agent_fingerprint.features.episode_features import load_run_metadata
 
-    parser = argparse.ArgumentParser(description="Extract unchanged v5 features and semantic-actions/v1 from raw L3 events")
+    parser = argparse.ArgumentParser(description="Extract semantic content and timing sequences from raw L3 events")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--task-id")
     source.add_argument("--input-file", type=Path, help="Raw JSON trace or event array")
     parser.add_argument("--input-dir", type=Path, default=Path("data/runs"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/results"))
-    parser.add_argument("--output-file", type=Path, help="Combined E/Z/v5 output (default: <input>.semantic.json in file mode)")
+    parser.add_argument("--output-file", type=Path, help="Semantic sequences only (default: <input>.semantic.json in file mode)")
     parser.add_argument("--semantic-config", type=Path, help="JSON object of SemanticActionConfig overrides")
     parser.add_argument("--debug-output", type=Path, help="Write full raw/candidate/reduction/final audit trace")
     parser.add_argument("--debug-session", help="Restrict debug trace to this session ID")
@@ -52,15 +50,19 @@ def main(argv=None):
     if isinstance(raw, list):
         raw = {"events": raw}
     parsed = parse_semantic_actions(raw, config)
-    statistics = format_l3(raw, load_run_metadata(input_path))
-    serialized = parsed.to_json(statistics)
     if args.write_semantic_probe:
         write_probe()
     if legacy_destination:
+        from agent_fingerprint.features.episode_features import load_run_metadata
+        from agent_fingerprint.features.l3_browser_dynamic import format_l3
+
+        statistics = format_l3(raw, load_run_metadata(input_path))
         write_json(legacy_destination, statistics)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(serialized, encoding="utf-8")
+    write_json(destination, parsed.to_sequences())
     if args.debug_output:
         args.debug_output.parent.mkdir(parents=True, exist_ok=True)
         args.debug_output.write_text(parsed.debug_trace(args.debug_session), encoding="utf-8")
-    print(f"{len(raw.get('events', []))} events -> {len(parsed.actions)} semantic actions; {statistics['feature_count']} v5 features -> {destination}")
+    print(f"{len(raw.get('events', []))} events -> {len(parsed.actions)} semantic actions -> {destination}")
+    if legacy_destination:
+        print(f"{statistics['feature_count']} v5 features -> {legacy_destination}")

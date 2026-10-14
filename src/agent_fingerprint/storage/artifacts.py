@@ -81,6 +81,13 @@ def _safe_path_call(resource: Any, method_name: str) -> Path | None:
     return Path(value).expanduser().resolve() if value else None
 
 
+def _numeric_sort_value(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("inf")
+
+
 def _safe_path_attr(resource: Any, parent_name: str, child_name: str) -> Path | None:
     parent = getattr(resource, parent_name, None)
     if parent is None:
@@ -311,6 +318,7 @@ def _organize_run_files(
             "adapter_result.json",
             "result.json",
             "response.json",
+            "browser_trace.json",
             "webvoyager_task.jsonl",
         }
         ignored_roots = {"skyvern_artifacts", "screenshots", "downloads", "__pycache__"}
@@ -541,11 +549,59 @@ def _ensure_agent_logs(result: AgentResult) -> None:
 
 
 class ArtifactWriter:
-    def _write_ui_trace(self, run_dir: Path, run_id: str, trace_store: TraceStore | None = None) -> Path:
+    def _write_ui_trace(
+        self,
+        run_dir: Path,
+        run_id: str,
+        trace_store: TraceStore | None = None,
+        browser_snapshot_path: Path | None = None,
+    ) -> Path:
         if trace_store:
             trace = trace_store.export(run_id)
         else:
             trace = {"schema": "agent-fingerprint-ui-trace/v1", "run_id": run_id, "event_count": 0, "events": []}
+        if browser_snapshot_path and browser_snapshot_path.is_file():
+            snapshot = _read_json(browser_snapshot_path, {})
+            snapshot_events = snapshot.get("events") if isinstance(snapshot, dict) else None
+            if isinstance(snapshot_events, list):
+                events = trace.get("events", [])
+                if not isinstance(events, list):
+                    events = []
+                seen = {
+                    (str(event.get("session_id") or ""), str(event.get("seq") or ""))
+                    for event in events
+                    if isinstance(event, dict)
+                }
+                session_id = str(snapshot.get("session_id") or "")
+                for item in snapshot_events:
+                    if not isinstance(item, dict):
+                        continue
+                    event = dict(item)
+                    event.setdefault("session_id", session_id)
+                    key = (str(event.get("session_id") or ""), str(event.get("seq") or ""))
+                    if not event.get("seq") or key not in seen:
+                        events.append(event)
+                        if event.get("seq"):
+                            seen.add(key)
+                events.sort(key=lambda event: (
+                    _numeric_sort_value(event.get("epoch_ms")) if isinstance(event, dict) else float("inf"),
+                    _numeric_sort_value(event.get("seq")) if isinstance(event, dict) else float("inf"),
+                ))
+                trace["events"] = events
+                trace["event_count"] = len(events)
+                trace["browser_snapshot"] = {
+                    key: snapshot.get(key)
+                    for key in (
+                        "event_count",
+                        "acknowledged_seq",
+                        "pending_event_count",
+                        "finalizing",
+                        "finalized",
+                        "last_upload_error",
+                        "error",
+                    )
+                    if key in snapshot
+                }
         if not self.collect_l3:
             samples = [
                 event.get("static_fingerprint")
@@ -694,7 +750,7 @@ class ArtifactWriter:
             "status": status,
             "error": error,
             "task": {"url": url, "prompt": prompt, **task_metadata(requested_url or url, prompt, task_id=task_id, site=site)},
-            "collector": collector_metadata(self.collector_version),
+            "collector": collector_metadata(),
             "agent": {"name": agent_name, "model": model},
             "outcome": {
                 "success": verification.success if verification is not None else framework_success,
@@ -742,5 +798,3 @@ class ArtifactWriter:
         path = run_dir / "manifest.json"
         path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         return manifest
-
-

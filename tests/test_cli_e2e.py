@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -9,6 +10,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from agent_fingerprint.semantic_actions.collector import build_probe
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +59,10 @@ class CliEndToEndTest(unittest.TestCase):
             self.assertEqual(summary["status"], "success")
             run_dir = Path(summary["output_dir"])
             manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["collector"], {
+                "version": "semantic/v1",
+                "sha256": hashlib.sha256(build_probe().encode("utf-8")).hexdigest(),
+            })
             self.assertEqual(manifest["gateway"]["latency_event_count"], 1)
             self.assertEqual(
                 json.loads(

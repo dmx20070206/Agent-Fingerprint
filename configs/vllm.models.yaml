@@ -1,0 +1,47 @@
+# Paths are relative to the repository root, not the current working directory.
+schema: agent-fingerprint-vllm/v1
+models_root: models
+defaults:
+  host: 127.0.0.1
+  max_model_len: 8192
+  gpu_memory_utilization: 0.90
+  max_num_seqs: 1
+models:
+  qwen3.5-9b:
+    repo_id: Qwen/Qwen3.5-9B
+    directory: Qwen3.5-9B
+    port: 8101
+    tensor_parallel_size: 1
+    serve_args: [--reasoning-parser, qwen3, --enable-auto-tool-choice, --tool-call-parser, qwen3_coder]
+  glm-4.6v-flash:
+    repo_id: zai-org/GLM-4.6V-Flash
+    directory: GLM-4.6V-Flash
+    port: 8102
+    tensor_parallel_size: 1
+    serve_args: [--reasoning-parser, glm45, --enable-auto-tool-choice, --tool-call-parser, glm45]
+  qwen3.5-27b:
+    repo_id: Qwen/Qwen3.5-27B
+    directory: Qwen3.5-27B
+    port: 8103
+    tensor_parallel_size: 4
+    serve_args: [--reasoning-parser, qwen3, --enable-auto-tool-choice, --tool-call-parser, qwen3_coder]
+  gemma-4-12b:
+    repo_id: google/gemma-4-12B-it
+    directory: gemma-4-12B-it
+    port: 8104
+    tensor_parallel_size: 2
+    serve_args: [--reasoning-parser, gemma4, --enable-auto-tool-choice, --tool-call-parser, gemma4]
+  ministral-3-8b:
+    repo_id: mistralai/Ministral-3-8B-Instruct-2512
+    directory: Ministral-3-8B-Instruct-2512
+    port: 8105
+    tensor_parallel_size: 1
+    serve_args: [--tokenizer-mode, mistral, --config-format, mistral, --load-format, mistral, --enable-auto-tool-choice, --tool-call-parser, mistral]
+  phi-4-multimodal:
+    repo_id: microsoft/Phi-4-multimodal-instruct
+    directory: Phi-4-multimodal-instruct
+    port: 8106
+    tensor_parallel_size: 1
+    # Automatically apply the vision adapter to image chat completions.
+    vision_lora: vision-lora
+    serve_args: [--trust-remote-code, --enable-lora, --max-lora-rank, '320']

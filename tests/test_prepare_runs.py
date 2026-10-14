@@ -56,7 +56,7 @@ def test_prepare_preview_unique_ids_normalization_and_dataset(tmp_path):
         assert events['nested']['run_id'] == run.name
         assert events['session_id'] == row['old_run_id']
         assert (run / 'capture.bin').read_bytes() == b'unchanged\x00'
-        assert resolve_run_dir(run.name, root) == run
+        assert resolve_run_dir(row['destination'], root) == run
     assert build_dataset(root, tmp_path / 'dataset')['included'] == 2
     state = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
     again = prepare(root, apply=True)
@@ -75,9 +75,9 @@ def test_incremental_ids_and_external_index(tmp_path):
     make_run(root, 'browseruse_gemini_flights_1')
     second = prepare(root, apply=True, index=index)['renamed'][0]
     assert first['run_id'] == 'run_0001'
-    assert second['run_id'] == 'run_0002'
+    assert second['run_id'] == 'run_0001'
     assert index.read_text().startswith(history)
-    assert resolve_run_dir('run_0002', tmp_path) == root / second['destination']
+    assert resolve_run_dir('final/' + second['destination'], tmp_path) == root / second['destination']
     assert len(json.loads((root / 'run_names.json').read_text())) == 2
 
 
@@ -89,7 +89,11 @@ def test_preflight_failure_leaves_runs_untouched(tmp_path, problem):
         make_run(root / 'shop/wrong/gemini', 'browseruse_gemini_shop_2')
     elif problem == 'duplicate':
         make_run(root / 'shop/browseruse/gemini', 'run_0001')
-        make_run(root / 'flights/browseruse/gemini', 'run_0001')
+        duplicate = make_run(root / 'incoming', 'run_0001')
+        path = duplicate / 'manifest.json'
+        data = json.loads(path.read_text())
+        data['task']['site'] = 'shop'
+        path.write_text(json.dumps(data))
     elif problem == 'destination':
         (root / 'shop/browseruse/gemini/run_0001').mkdir(parents=True)
     else:
@@ -122,3 +126,81 @@ def test_bash_prepare_from_another_directory_and_argument_errors(tmp_path):
         result = subprocess.run(['bash', str(script), *options], capture_output=True, text=True)
         assert result.returncode == 2
         assert 'Error:' in result.stderr
+
+
+def test_metadata_classification_of_dated_runs_and_nested_artifacts(tmp_path):
+    root = tmp_path / 'final'
+    run = make_run(root / '2026-10-11', 'agente_qwen3_5_9b_1011_1905',
+                   agent='agente', model='qwen3.5-9b')
+    path = run / 'manifest.json'
+    metadata = json.loads(path.read_text())
+    metadata['task']['site'] = 'shop'
+    path.write_text(json.dumps(metadata))
+    nested = run / 'artifacts/framework/manifest.json'
+    nested.parent.mkdir(parents=True)
+    nested.write_text('{"run_id": "framework-original"}')
+    before = nested.read_bytes()
+    preview = prepare(root)
+    assert preview['runs_found'] == 1
+    assert run.exists()
+    assert preview['renamed'][0]['destination'] == 'shop/agente/qwen3.5-9b/run_0001'
+    prepare(root, apply=True)
+    target = root / preview['renamed'][0]['destination']
+    assert (target / 'artifacts/framework/manifest.json').read_bytes() == before
+    assert json.loads((target / 'manifest.json').read_text())['run_id'] == 'run_0001'
+    assert prepare(root)['renamed'] == []
+
+
+def test_unknown_site_rejected_before_mutation(tmp_path):
+    root = tmp_path / 'final'
+    run = make_run(root, 'unclassified')
+    with pytest.raises(ValueError, match='task.site'):
+        prepare(root, apply=True)
+    assert run.exists()
+    assert not (root / 'run_names.json').exists()
+
+
+def test_short_ids_cli_alias(tmp_path):
+    root = tmp_path / 'final'
+    run = make_run(root, 'browseruse_gemini_shop_1')
+    environment = os.environ.copy()
+    environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[1] / 'src')
+    result = subprocess.run([sys.executable, '-m', 'agent_fingerprint', 'prepare',
+                             '--input-dir', str(root), '--short-ids'],
+                            capture_output=True, text=True, env=environment)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['renamed'][0]['run_id'] == 'run_0001'
+    assert run.exists()
+
+
+def test_per_group_renumbering_lookup_dataset_and_stable_prepare(tmp_path):
+    from agent_fingerprint.storage.prepare import prepare_stable
+    from agent_fingerprint.modeling.data import load_sessions
+    from agent_fingerprint.analysis._common import paths
+    root = tmp_path / 'final'
+    for group, old_id in [('shop/browseruse/gemini', 'run_0002'),
+                          ('shop/browseruse/gemini', 'run_0010'),
+                          ('flights/browseruse/gemini', 'run_0003'),
+                          ('shop/agente/gemini', 'run_0004')]:
+        make_run(root / group, old_id, agent=group.split('/')[1])
+    preview = prepare(root)
+    assert len(preview['renamed']) == 4
+    prepare(root, apply=True)
+    assert (root / 'shop/browseruse/gemini/run_0002').is_dir()
+    assert len(list(root.rglob('run_0001'))) == 3
+    index = [json.loads(line) for line in (root / 'index.jsonl').read_text().splitlines()]
+    assert len(index) == len({r['path'] for r in index}) == 4
+    with pytest.raises(ValueError, match='ambiguous'):
+        resolve_run_dir('run_0001', root)
+    qualified = 'shop/agente/gemini/run_0001'
+    assert resolve_run_dir(qualified, root) == root / qualified
+    assert paths(qualified, root, tmp_path / 'features', 'l3_browser_dynamic.json')[1] == tmp_path / 'features' / qualified / 'l3_browser_dynamic.json'
+    assert prepare(root, apply=True)['renamed'] == []
+    assert prepare_stable(root, apply=True)['renamed'] == []
+    dataset = tmp_path / 'dataset'
+    assert build_dataset(root, dataset)['included'] == 4
+    sessions = load_sessions(dataset / 'samples.json')
+    assert len({s.session_id for s in sessions}) == 4
+    assert qualified in {s.session_id for s in sessions}
+    with pytest.raises(ValueError, match='relative path'):
+        resolve_run_dir('../outside', root)

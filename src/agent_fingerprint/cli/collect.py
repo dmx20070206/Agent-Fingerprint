@@ -51,7 +51,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--agents", help="Comma-separated agents for a task matrix; overrides --agent")
     parser.add_argument("--task-file", type=Path, help="JSON/JSONL tasks with url/prompt (or web/ques) fields")
     parser.add_argument("--url", help="Run one task directly; relative paths are served by the local sandbox")
-    parser.add_argument("--collector", choices=["legacy/v2", "semantic/v1"], default="legacy/v2")
     parser.add_argument("--task-id", help="Stable task identity")
     parser.add_argument("--site", help="Explicit website collection label")
     parser.add_argument("--prompt", help="Task prompt for --url (optional in manual mode)")
@@ -341,7 +340,6 @@ def _build_runner(args: argparse.Namespace) -> PipelineRunner:
         sandbox_directory=args.sandbox_directory,
         start_sandbox=not args.no_sandbox,
         inject_monitor=not args.no_monitor,
-        collector_version=args.collector,
         gateway_factory=gateway_factory,
         sniffer_factory=None if not use_network_probe else make_capture,
         adapter_options=adapter_options,
@@ -351,11 +349,9 @@ def _build_runner(args: argparse.Namespace) -> PipelineRunner:
         collect_l3=args.collect_l3,
         collect_l4=args.collect_l4,
         interaction_delay_seconds=args.interaction_delay,
-        # The browser remains open when a manual session ends.  Its last
-        # scroll event can spend 100 ms in the UI throttle and another 250 ms
-        # in the upload batch, so retain the collector long enough to receive
-        # that final batch after the operator presses Enter.
-        trace_grace_seconds=0.5 if manual_only else 0.15,
+        # Scroll events are throttled for 100 ms and uploads are batched for
+        # 250 ms; use a quiet-period drain for every framework before export.
+        trace_grace_seconds=0.5,
         trace_finalize_timeout_seconds=args.trace_finalize_timeout,
         agent_timeout=args.timeout if args.timeout is not None else 1800.0,
     )

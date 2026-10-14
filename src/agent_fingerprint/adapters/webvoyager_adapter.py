@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -14,21 +16,48 @@ from agent_fingerprint.paths import PROJECT_ROOT
 DEFAULT_REPOSITORY = PROJECT_ROOT / "third_party" / "WebVoyager"
 
 
-def _has_matching_selenium_cache(home: Path | None = None) -> bool:
-    """Return whether Selenium Manager has a matching cached Chrome/driver."""
+def _matching_selenium_pair(home: Path | None = None) -> tuple[Path, Path] | None:
+    """Choose one exact cached version, including its platform, deterministically."""
 
     cache_root = (home or Path.home()) / ".cache" / "selenium"
-    browser_versions = {
-        executable.parent.name
+    browsers = {
+        (executable.parent.parent.name, executable.parent.name): executable
         for executable in cache_root.glob("chrome/*/*/chrome")
         if executable.is_file()
     }
-    driver_versions = {
-        executable.parent.name
+    drivers = {
+        (executable.parent.parent.name, executable.parent.name): executable
         for executable in cache_root.glob("chromedriver/*/*/chromedriver")
         if executable.is_file()
     }
-    return bool(browser_versions & driver_versions)
+    matches = browsers.keys() & drivers.keys()
+    native_platform = {
+        "linux": "linux64",
+        "darwin": "mac-arm64" if platform.machine() in {"arm64", "aarch64"} else "mac-x64",
+        "win32": "win64" if sys.maxsize > 2**32 else "win32",
+    }.get(sys.platform)
+    matches = {key for key in matches if key[0] == native_platform}
+    if not matches:
+        return None
+    key = max(matches, key=lambda key: (tuple(int(n) for n in key[1].split('.')), key[0]))
+    return browsers[key], drivers[key]
+
+
+def _has_matching_selenium_cache(home: Path | None = None) -> bool:
+    return _matching_selenium_pair(home) is not None
+
+
+def _configure_cached_browser(environment: dict[str, str]) -> None:
+    # Never combine an explicit binary with an unrelated automatic selection.
+    if any(environment.get(key) for key in (
+        "WEBVOYAGER_CHROME_BINARY", "WEBVOYAGER_CHROMEDRIVER",
+        "CHROME_BINARY", "CHROMEDRIVER",
+    )):
+        return
+    pair = _matching_selenium_pair()
+    if pair:
+        environment["WEBVOYAGER_CHROME_BINARY"] = str(pair[0])
+        environment["WEBVOYAGER_CHROMEDRIVER"] = str(pair[1])
 
 
 class WebVoyagerAdapter(BaseAgentAdapter):
@@ -172,24 +201,19 @@ class WebVoyagerAdapter(BaseAgentAdapter):
         if self.api_base:
             environment["OPENAI_BASE_URL"] = self.api_base
             environment["OPENAI_API_BASE"] = self.api_base
-        # Selenium Manager performs online version discovery even when a
-        # complete browser/driver pair is already cached.  That discovery can
-        # stall behind cluster-wide HTTP proxies; offline mode makes the
-        # existing, matching cache deterministic.  Explicit user settings
-        # remain authoritative, and uncached machines still use normal online
-        # discovery.
-        if (
-            "SE_OFFLINE" not in environment
-            and not environment.get("WEBVOYAGER_CHROME_BINARY")
-            and not environment.get("WEBVOYAGER_CHROMEDRIVER")
-            and _has_matching_selenium_cache()
-        ):
-            environment["SE_OFFLINE"] = "true"
+        # Offline discovery alone can still mix the newest Chrome with an old
+        # driver. Pin both paths in this child only; leave the shared cache and
+        # other agents' environments untouched.
+        _configure_cached_browser(environment)
         environment.update(self.proxy_environment(self.proxy_url))
         if self.proxy_url:
             args.extend(["--proxy_server", self.proxy_url])
         if self.pass_api_key_arg and environment_key:
             args.extend(["--api_key", environment_key])
+        if (self.api_model or "").rsplit("/", 1)[-1].lower().startswith("qwen3.5-"):
+            # Install compatibility fixes only inside this framework/model's
+            # child process; keep upstream and other model launchers intact.
+            args.insert(0, str(Path(__file__).resolve().parents[1] / "runners" / "webvoyager.py"))
 
         return self.execute(
             self.conda_command(args),

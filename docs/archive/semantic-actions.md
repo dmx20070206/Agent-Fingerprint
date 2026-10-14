@@ -1,6 +1,8 @@
+> 历史资料：内容与结果以记录时版本为准。当前操作见[工作流](../workflow.md)，其他历史材料见[归档索引](README.md)。
+
 # 语义动作层原始需求（历史设计）
 
-[文档导航](../README.md) · 本文保留原始需求，出现的 `analysis/`、`lib/` 等路径属于旧布局。当前实现位于 `src/agent_fingerprint/semantic_actions/`；使用命令见[语义动作指南](../semantic-actions.md)。
+[文档导航](../README.md) · 本文保留原始需求，出现的 `analysis/`、`lib/` 等路径属于旧布局。当前实现位于 `src/agent_fingerprint/semantic_actions/`；使用命令见[语义动作指南](../reference/semantic-actions.md)。
 
 请为现有浏览器行为指纹项目实现一个新的“Semantic Action Abstraction”层，将底层浏览器事件序列 E 转换为高层语义动作序列 Z。
 最终效果是，运行一个脚本后，可以将一个raw的json文件变成一个记录高层语义动作序列 Z 的新 json。

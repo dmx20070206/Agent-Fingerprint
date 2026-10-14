@@ -1,3 +1,5 @@
+> 历史资料：内容与结果以记录时版本为准。当前操作见[工作流](../workflow.md)，其他历史材料见[归档索引](README.md)。
+
 # TASK.md 完成报告
 
 [文档导航](../README.md) · **历史交付记录**：保留当次任务的实现和验证结果。当前入口、参数及示例见[项目首页](../../README.md)。
@@ -19,7 +21,7 @@ python analysis/l3_browser_dynamic.py \
 
 原来的 `--task-id / --input-dir / --output-dir` 用法继续可用：原位置仍输出原格式统计文件，旁边增加 `semantic_actions.json`。
 
-可直接查看本目录的 [example_raw.json](example_raw.json)、[example_output.json](example_output.json) 和 [example_debug.txt](example_debug.txt)。示例的 22 个原始事件规约为：
+原报告引用的示例为 `docs/reports/example_raw.json`（历史示例文件，当前仓库未保留）、`docs/reports/example_output.json`（历史示例文件，当前仓库未保留） 和 `docs/reports/example_debug.txt`（历史示例文件，当前仓库未保留）。示例的 22 个原始事件规约为：
 
 ```text
 TEXT_ENTRY(TEXT_INPUT)
@@ -43,7 +45,7 @@ CLICK(LINK)
 | 启动脚本兼容 | 原 `analysis/l3_browser_dynamic.py` 的 main 委托 `cli.py`，统计函数保持原样 |
 | 采集缺失字段补充 | `collector.py` + `collector_extension.js`，组合原采集器生成增强版本 |
 | 单元／集成测试 | `tests/`，包含固定 v5 回归快照、Node 采集执行测试、实际 HTTP 沙盒接入测试 |
-| 使用与限制说明 | [README.md](README.md)，包含配置、Python API、字段说明及采集接入方式 |
+| 使用与限制说明 | [README.md](../reference/semantic-actions.md#采集缺失项与扩展接入)，包含配置、Python API、字段说明及采集接入方式 |
 
 ## 主要规约与正确性约束
 
@@ -76,7 +78,7 @@ python analysis/l3_browser_dynamic.py \
   --write-semantic-probe lib/semantic_actions/generated_monitor.js
 ```
 
-生成脚本复用原 probe 的上传、ACK、停止和导航实现，仅替换必要采集钩子。通过现有 `SandboxRequestHandler.monitor_path` 接入；完整例子见 [README.md](README.md#采集缺失项与扩展接入)。此接入方式已通过实际 HTTP 服务测试。默认采集流程没有被自动切换。
+生成脚本复用原 probe 的上传、ACK、停止和导航实现，仅替换必要采集钩子。通过现有 `SandboxRequestHandler.monitor_path` 接入；完整例子见 [README.md](../reference/semantic-actions.md#采集缺失项与扩展接入)。此接入方式已通过实际 HTTP 服务测试。默认采集流程没有被自动切换。
 
 文本仅在浏览器内存中比较，不额外上传 actual value 或文本哈希。增强采集器在 DOMContentLoaded 后补拍控件及滚动容器 baseline。新增采集字段和事件只影响以后采集的数据，无法恢复旧 JSON 已丢失的信息。
 

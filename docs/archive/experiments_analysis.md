@@ -1,8 +1,10 @@
+> 历史资料：内容与结果以记录时版本为准。当前操作见[工作流](../workflow.md)，其他历史材料见[归档索引](README.md)。
+
 # data/experiments 实验结果分析
 
-[文档导航](README.md) · **历史分析**：本文针对两个 v3 实验（58 维），数字不代表当前 v5 / attribution 的结果。当前运行方式见[训练指南](attribution-training.md)。
+[文档导航](../README.md) · **历史分析**：本文针对两个 v3 实验（58 维），数字不代表当前 v5 / attribution 的结果。当前运行方式见[训练指南](../workflow.md#训练与评估)。
 
-分析范围：`l3_v3_agent`、`l3_v3_llm` 两个已保存实验。原始模型、评估文件和运行数据均未修改；补充诊断保存于 [diagnostics.json](../data/results/experiments_review/diagnostics.json)，可用 [reproduce.py](../data/results/experiments_review/reproduce.py) 从仓库根目录复现。
+分析范围：`l3_v3_agent`、`l3_v3_llm` 两个已保存实验。原始模型、评估文件和运行数据均未修改；补充诊断保存于 [diagnostics.json](../../data/results/experiments_review/diagnostics.json)，可用 [reproduce.py](../../data/results/experiments_review/reproduce.py) 从仓库根目录复现。
 
 **结论：当前 L3 特征能很强地区分已见实验配置下的框架，但跨任务效果明显下降；LLM 标签有可识别信号，却高度依赖框架、任务和完成情况。现有结果不能证明跨任务的 100% 框架识别，也不能证明框架无关的 LLM 指纹。**
 
@@ -15,7 +17,7 @@
 | Agent 框架 | 5 | 78/78 | 100.00% | 1.0000 | 24.36% |
 | LLM 标签 | 3 | 62/78 | 79.49% | 0.7691 | 38.46% |
 
-来源：[Agent 原始评估](../data/experiments/l3_v3_agent/evaluation.json)、[LLM 原始评估](../data/experiments/l3_v3_llm/evaluation.json)。
+来源：[Agent 原始评估](../../data/experiments/l3_v3_agent/evaluation.json)、[LLM 原始评估](../../data/experiments/l3_v3_llm/evaluation.json)。
 
 已核对以下几点：
 
@@ -30,7 +32,7 @@
 
 ## 2. 样本覆盖存在明显缺口
 
-[quality.json](../data/datasets/l3_v3/quality.json) 扫描了 96 个目录，只纳入 78 个：16 个因目录/manifest/L3 的 run_id 不一致被排除，另外 2 个因事件为空被排除。16 个 ID 不一致样本中还有 1 个本身没有事件。
+[quality.json](../../data/datasets/l3_v3/quality.json) 扫描了 96 个目录，只纳入 78 个：16 个因目录/manifest/L3 的 run_id 不一致被排除，另外 2 个因事件为空被排除。16 个 ID 不一致样本中还有 1 个本身没有事件。
 
 也就是说，**15 个有交互数据的运行被元数据问题挡在训练集外**。假设其他校验均通过，修复这些 ID 后可恢复到 93 个有事件样本；剩余 3 个确实没有浏览器轨迹。本次只核查，没有修改 ID 或重建原实验。
 

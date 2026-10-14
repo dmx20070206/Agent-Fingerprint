@@ -374,8 +374,10 @@ def test_invalid_config(value):
         SemanticActionConfig(T_SCROLL_GAP_MS=value)
 
 
-def test_file_cli_preserves_raw_and_emits_all_views(tmp_path):
-    raw = {"events": [e("click", 1, BUTTON)]}
+@pytest.mark.parametrize("event_array", [False, True])
+def test_file_cli_preserves_raw_and_emits_only_sequences(tmp_path, event_array):
+    events = [e("click", 1, BUTTON)]
+    raw = events if event_array else {"events": events}
     source, destination, debug = tmp_path / "raw.json", tmp_path / "z.json", tmp_path / "debug.txt"
     source.write_text(json.dumps(raw))
     cmd = [sys.executable, "-m", "agent_fingerprint", "extract", "--input-file", str(source), "--output-file", str(destination), "--debug-output", str(debug)]
@@ -383,10 +385,20 @@ def test_file_cli_preserves_raw_and_emits_all_views(tmp_path):
     env["PYTHONPATH"] = os.pathsep.join(
         part for part in (str(ROOT / "src"), env.get("PYTHONPATH", "")) if part
     )
-    subprocess.run(cmd, cwd=tmp_path, env=env, check=True, capture_output=True)
+    completed = subprocess.run(cmd, cwd=tmp_path, env=env, check=True, capture_output=True, text=True)
     result = json.loads(destination.read_text())
-    assert result["existing_statistics"] == format_l3(raw)
-    assert result["raw_trace"] == json.loads(source.read_text()) == raw
+    assert result == {
+        "action_sequence_content": [["CLICK", "BUTTON"]],
+        "action_sequence_temporal": [["CLICK", "BUTTON", 0, None]],
+    }
+    assert "1 events -> 1 semantic actions" in completed.stdout
+    assert "v5 features" not in completed.stdout
+    assert json.loads(source.read_text()) == raw
+    from agent_fingerprint.analysis.representations import semantic_features
+    from agent_fingerprint.modeling.data import semantic_tokens
+
+    assert semantic_features(result) == semantic_features(abstract_events(raw))
+    assert semantic_tokens(result) == semantic_tokens(abstract_events(raw))
     assert "Z[0] CLICK(BUTTON)" in debug.read_text()
     cmd[cmd.index("--output-file") + 1] = str(source)
     assert subprocess.run(cmd, cwd=tmp_path, env=env, capture_output=True).returncode != 0
@@ -409,4 +421,7 @@ def test_task_cli_emits_unchanged_feature_file_and_semantic_sidecar(tmp_path):
     )
     subprocess.run([sys.executable, "-m", "agent_fingerprint", "extract", "--task-id", "run1", "--input-dir", str(tmp_path / "runs"), "--output-dir", str(out)], cwd=ROOT, env=env, check=True, capture_output=True)
     assert json.loads((out / "run1/l3_browser_dynamic.json").read_text()) == format_l3(raw)
-    assert json.loads((out / "run1/semantic_actions.json").read_text())["existing_statistics"] == format_l3(raw)
+    assert json.loads((out / "run1/semantic_actions.json").read_text()) == {
+        "action_sequence_content": [["TEXT_ENTRY", "TEXT_INPUT"]],
+        "action_sequence_temporal": [["TEXT_ENTRY", "TEXT_INPUT", 0, None]],
+    }

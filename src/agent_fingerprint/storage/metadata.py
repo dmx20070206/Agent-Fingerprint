@@ -19,14 +19,11 @@ def task_metadata(url, prompt, *, task_id=None, site=None):
     return {"task_id": task_id or hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:16], "site": site}
 
 
-def collector_metadata(version="legacy/v2"):
-    from agent_fingerprint.paths import PACKAGE_ROOT
-    source = PACKAGE_ROOT / "collection/probes/inject_monitor.js"
-    payload = source.read_bytes()
-    if version == "semantic/v1":
-        from agent_fingerprint.semantic_actions.collector import build_probe
-        payload = build_probe().encode()
-    return {"version": version, "sha256": hashlib.sha256(payload).hexdigest()}
+def collector_metadata():
+    from agent_fingerprint.semantic_actions.collector import build_probe
+
+    payload = build_probe().encode("utf-8")
+    return {"version": "semantic/v1", "sha256": hashlib.sha256(payload).hexdigest()}
 
 
 def site_from_manifest(manifest, directory=None):

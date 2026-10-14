@@ -1,6 +1,6 @@
 # 项目架构
 
-[文档导航](README.md)
+[文档导航](../README.md)
 
 主进程负责启动任务、采集数据和归档；各 Agent 在自己的 Conda 环境中运行。实现统一位于 `src/agent_fingerprint/`。
 
@@ -59,6 +59,6 @@ python -m agent_fingerprint --help
 ```
 
 `experiment` 实际执行时会保存配置快照、完整计划和每条命令的返回码。
-增强语义探针通过版本化的 `AF_MONITOR_EXTENSION_API:1` 接口接入，使用 `collect --collector semantic/v1` 启用；版本及校验和写入 manifest。
+增强语义探针通过版本化的 `AF_MONITOR_EXTENSION_API:1` 接口接入，是所有新采集统一使用的探针；版本 `semantic/v1` 及校验和写入 manifest，无需选择采集器。
 
-目录移动保留 manifest 的 run ID；旧数据迁移需显式调用命令。具体见[数据契约](data-contract.md)，框架恢复见[第三方说明](../third_party/README.md)。
+目录移动保留 manifest 的 run ID；旧数据迁移需显式调用命令。具体见[数据契约](data.md)，框架恢复见[第三方说明](../../third_party/README.md)。

@@ -55,7 +55,8 @@ def build_dataset(input_dir, output_dir, *, sites=None, agents=None, llms=None):
                 raise ValueError('missing run_id')
             if raw.get('run_id') != run_id:
                 raise ValueError('manifest/L3 run_id mismatch')
-            if run_id in seen_ids:
+            identity = (site, agent.get('name'), agent.get('model'), run_id)
+            if identity in seen_ids:
                 raise ValueError('duplicate run_id')
             agent = manifest.get('agent') or {}
             if not all(isinstance(agent.get(k), str) and agent[k].strip() for k in ('name', 'model')):
@@ -97,7 +98,7 @@ def build_dataset(input_dir, output_dir, *, sites=None, agents=None, llms=None):
                          **{key: manifest.get(key, task.get(key))
                             for key in ('session_id', 'trial_id', 'task_id', 'prompt_id')},
                          'feature_schema': SCHEMA, 'event_count': len(events), 'features': result['features']})
-            seen_ids.add(run_id)
+            seen_ids.add(identity)
             seen_hashes.add(event_hash)
             if manifest.get('status') != 'success':
                 warnings.append({'sample_id': sample_id, 'reason': 'non-success run retained: trace is usable'})
@@ -109,6 +110,7 @@ def build_dataset(input_dir, output_dir, *, sites=None, agents=None, llms=None):
     destination.mkdir(parents=True, exist_ok=True)
     dataset = {'schema': SCHEMA, 'feature_names': list(FEATURE_NAMES), 'samples': rows, 'selection': selection,
                'provenance': {'feature_schema': SCHEMA, 'run_ids': [r['run_id'] for r in rows],
+                              'sample_ids': [r['sample_id'] for r in rows],
                               'semantic_parser': 'semantic-actions/v1', 'semantic_config': asdict(SemanticActionConfig())}}
     dataset['representations'] = {
         'statistics': {'schema': SCHEMA, 'feature_names': list(FEATURE_NAMES)},

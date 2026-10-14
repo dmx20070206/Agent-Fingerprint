@@ -1,6 +1,70 @@
-# 训练实现与评估口径
+# 训练参数与评估口径
 
-本文供核对实现和复现实验时查阅。日常运行请先看[训练指南](../attribution-training.md)，全部文档见[导航](../README.md)。
+[文档导航](../README.md) · 首次训练见[工作流](../workflow.md#训练与评估)。本页集中说明调参、结果文件和实现约定。
+
+## 常用参数
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--dataset` | 必填 | `dataset` 生成的 `samples.json` |
+| `--split-manifest` | 训练必填 | 固定的 train/val/test 划分文件 |
+| `--representation` | 必填 | `stat98`、`event` 或 `semantic` |
+| `--target` | 必填 | `agent` 或 `llm`，每次一个目标 |
+| `--semantic-mode` | `content` | 仅语义路线使用；`timing` 加入时间信息 |
+| `--seed` | `42` | 在 split 中控制划分，在 train 中控制模型随机性 |
+| `--seeds` | 未指定 | 空格分隔多个模型种子，优先于 `--seed` |
+| `--epochs` | `50` | Transformer 最大训练轮数 |
+| `--batch-size` | `16` | 每批样本数；显存不足可减小 |
+| `--lr` | `0.0001` | Transformer 学习率 |
+| `--early-stopping-patience` | `20` | 验证集 Macro-F1 连续不改善的停止阈值 |
+| `--max-seq-len` | 训练集长度 P95 向上取整 | 最大 token 数，不含 CLS；超出会截断 |
+| `--device` | `cpu` | Transformer 设备；可用 CUDA 环境中可设 `cuda` |
+| `--class-weight` | `none` | `balanced` 按训练集类别数量加权 |
+| `--xgb-estimators` | `200` | XGBoost 树数 |
+| `--xgb-max-depth` | `4` | XGBoost 树的最大深度 |
+| `--xgb-learning-rate` | `0.05` | XGBoost 学习率，与 `--lr` 不同 |
+| `--threads` | `2` | 训练线程设置 |
+| `--output-dir` | 必填 | 本次实验输出位置，使用新目录 |
+
+先设置输入、划分、表示、目标和输出目录，其余保留默认即可。`--epochs/--lr/--batch-size/--device` 用于 Transformer；`--xgb-*` 用于统计模型。切换目标或表示时必须换输出目录。
+
+完整选项：`python -m agent_fingerprint attribution train --help`。
+Transformer 仅按验证集 Macro-F1 选择 checkpoint；归一化只使用训练集。XGBoost 的缺失统计值保留为 NaN，输入仍为 98 维。
+
+## 日志与输出
+
+训练进度实时输出到终端（stderr），stdout 保留最终 JSON 结果：
+
+- XGBoost：每个 boosting round 显示当前/总轮数、训练与验证的 log loss 和 acc。
+- Transformer：每个 epoch 显示当前/总轮数、训练 loss、训练/验证 acc、验证 Macro-F1、最佳 epoch 和早停计数；结束时显示恢复的最佳 epoch。训练 acc 是该轮训练批次累计的准确率（启用 dropout），验证 acc 在评估模式下计算。
+
+上述指标同时保存在 `training_log.json`；XGBoost 的 `validation_0` 为验证集，`validation_1` 为训练集，acc 等于 `1 - error`（多分类为 `1 - merror`）。CUDA 可用性检测只屏蔽驱动版本过旧的特定 warning；`--device cuda` 的实际运行错误仍正常抛出。
+
+| 输出 | 先看什么 |
+| --- | --- |
+| `metrics.json` | train/validation/test 的 accuracy、Macro-F1、逐类指标 |
+| `predictions.csv`、`confusion_matrix.csv` | 哪些类别容易混淆、哪些运行预测错误 |
+| `baselines.json` | 多数类、事件长度、动作长度和动作直方图基线 |
+| `training_log.json` | 训练过程与验证表现 |
+| `config.json`、`split_manifest.json` | 参数、数据指纹、划分、归一化和截断记录 |
+| `checkpoint.pt` / `checkpoint.ubj` | Transformer / XGBoost 模型 |
+| 汇总目录的 `tables.md` | 四种表示比较和时间信息消融，多 seed 均值与标准差 |
+
+`aggregate` 按数据集和划分分别汇总，不合并不同 split；缺失实验显示 `--`。
+
+## 可选诊断
+
+```bash
+# 小样本拟合检查，用于检查实现；不是正式评估结果
+python -m agent_fingerprint attribution overfit \
+  --dataset data/datasets/phase1/samples.json --target agent --size 24 --unique-content \
+  --output-dir data/experiments/phase1/tiny_agent
+
+# 训练模块回归测试，需要 dev 依赖
+python -m pytest tests/modeling -q
+```
+
+`--unique-content` 仅用于小样本诊断，避免相同内容对应冲突标签；正式训练不会因此筛掉样本。词表、时间处理、PAGE_BOUNDARY 和输入检查见下文。
 
 ## 数据与模型边界
 
@@ -102,4 +166,4 @@ length 和 histogram 使用完整轨迹，不包含 PAGE_BOUNDARY/CLS，不自�
 均值提升或 n=1 的 std=0 不意味着显著性，也不能单靠 sequence 与 histogram 差值认定因果上的 ordering 信息。
 
 验证命令：`python -m pytest tests/modeling -q`，完整回归：`python -m pytest -q`。
-旧版分组流程的历史审计、overfit 和回归结果见 [实现验证报告](../reports/attribution_training_validation.md)。
+旧版分组流程的历史审计、overfit 和回归结果见 [实现验证报告](../archive/attribution_training_validation.md)。

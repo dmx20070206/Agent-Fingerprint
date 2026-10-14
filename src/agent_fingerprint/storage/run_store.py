@@ -46,32 +46,21 @@ def _append_run_index(output_root: Path, run_dir: Path, manifest: Mapping[str, A
 
 def resolve_run_dir(task_id, input_dir):
     input_root = Path(input_dir).expanduser().resolve()
-    legacy = input_root / task_id
-    if legacy.is_dir() and _has_run_id(legacy, task_id):
-        return legacy
-    index = input_root / "index.jsonl"
-    if index.is_file():
-        for line in reversed(index.read_text(encoding="utf-8").splitlines()):
-            try:
-                entry = json.loads(line)
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if not isinstance(entry, dict):
-                continue
-            if entry.get("run_id") != task_id or not isinstance(entry.get("path"), str):
-                continue
-            candidate = (input_root / entry["path"]).resolve()
-            try:
-                candidate.relative_to(input_root)
-            except ValueError:
-                continue
-            if candidate.is_dir() and _has_run_id(candidate, task_id):
-                return candidate
+    requested = Path(task_id)
+    if requested.is_absolute() or '..' in requested.parts:
+        raise ValueError('Run reference must be a relative path within --input-dir')
+    # Qualified paths explicitly disambiguate repeated local run IDs.
+    if len(requested.parts) > 1:
+        candidate = (input_root / requested).resolve()
+        if (candidate.is_relative_to(input_root) and candidate.is_dir()
+                and (candidate / 'manifest.json').is_file()):
+            return candidate
+        raise FileNotFoundError(f"run not found: {task_id}")
     # Curated runs can be grouped by task/agent/model without an index.
     matches = sorted({p.parent.resolve() for p in iter_run_manifests(input_root)
                       if _has_run_id(p.parent, task_id) and p.parent.resolve().is_relative_to(input_root)})
     if len(matches) == 1:
         return matches[0]
     if matches:
-        raise ValueError(f"ambiguous run ID {task_id}: {matches}; narrow --input-dir")
+        raise ValueError(f"ambiguous run ID {task_id}: {matches}; use task/agent/model/run_id or narrow --input-dir")
     raise FileNotFoundError(f"run not found: {task_id}")

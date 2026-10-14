@@ -66,6 +66,71 @@ class AdapterTest(unittest.TestCase):
             result = json.loads((Path(directory) / "result.json").read_text())
             self.assertEqual(result, {"task_success": False, "task_status": "incomplete"})
 
+    def test_browseruse_finalizes_and_saves_page_trace_snapshot(self) -> None:
+        main = next(node for node in ast.parse(BROWSERUSE_RUNNER).body
+                    if isinstance(node, ast.AsyncFunctionDef) and node.name == "main")
+        expressions = []
+        snapshot = {
+            "session_id": "browser-session",
+            "event_count": 1,
+            "events": [{"seq": 1, "type": "click"}],
+        }
+
+        async def evaluate(params, session_id):
+            expression = params["expression"]
+            expressions.append(expression)
+            value = "passed" if "taskStatus" in expression else snapshot
+            return {"result": {"value": value}}
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.browser_session = types.SimpleNamespace(
+                    get_or_create_cdp_session=lambda **options: asyncio.sleep(0, result=types.SimpleNamespace(
+                        session_id="cdp-session",
+                        cdp_client=types.SimpleNamespace(
+                            send=types.SimpleNamespace(
+                                Runtime=types.SimpleNamespace(evaluate=evaluate)
+                            )
+                        ),
+                    ))
+                )
+
+            async def run(self, **kwargs):
+                return types.SimpleNamespace(
+                    is_successful=lambda: True,
+                    judgement=lambda: None,
+                    final_result=lambda: "done",
+                )
+
+            def close(self):
+                return None
+
+        namespace = {
+            "asyncio": asyncio,
+            "inspect": __import__("inspect"),
+            "json": json,
+            "os": os,
+            "Path": Path,
+            "traceback": __import__("traceback"),
+            "make_browser": lambda proxy: None,
+            "make_llm": lambda *args: None,
+            "make_tools": lambda: None,
+            "Agent": FakeAgent,
+            "verified_page_state": {},
+        }
+        exec(compile(ast.Module(body=[main], type_ignores=[]), "runner", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "AGENT_OUTPUT_DIR": directory,
+            "AGENT_TASK_URL": "http://example.test",
+            "AGENT_TASK_PROMPT": "Complete the form",
+        }):
+            asyncio.run(namespace["main"]())
+            saved_snapshot = json.loads((Path(directory) / "browser_trace.json").read_text())
+
+        self.assertEqual(saved_snapshot, snapshot)
+        self.assertTrue(any("monitor.stop(true)" in expression for expression in expressions))
+        self.assertTrue(any("monitor.export()" in expression for expression in expressions))
+
     def test_browseruse_proxy_normalizes_prose_without_disabling_openai_schema(self) -> None:
         names = {"_extract_json_value", "_normalizing_chat_openai_class", "make_llm"}
         nodes = [node for node in ast.parse(BROWSERUSE_RUNNER).body

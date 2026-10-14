@@ -7,6 +7,7 @@ def main(argv=None):
     commands = {
         "collect": "agent_fingerprint.cli.collect",
         "experiment": "agent_fingerprint.cli.experiment",
+        "vllm": "agent_fingerprint.cli.vllm",
         "extract": "agent_fingerprint.cli.extract",
         "prepare": "agent_fingerprint.storage.prepare_runs",
         "normalize": "agent_fingerprint.storage.normalize_run_ids",

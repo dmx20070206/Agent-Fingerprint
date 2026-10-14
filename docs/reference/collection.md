@@ -1,37 +1,8 @@
-# 采集：单次任务与批量实验
+# 采集参数与排错
 
-[文档导航](README.md) · 前置：[安装与模型配置](setup.md) · 下一步：[构建数据集](data-contract.md)
+[文档导航](../README.md) · 常用命令见[工作流](../workflow.md#采集)。所有命令在仓库根目录的 `agent-fingerprint` 环境执行。
 
-`collect` 执行任务并保存原始记录；`experiment` 将配置中的框架、模型、任务展开成多次 `collect`。
-真实框架需要自己的运行环境和模型配置；无需密钥的流程示例见[项目首页](../README.md)。
-
-| 场景 | 选择 |
-| --- | --- |
-| 一个框架运行一个任务文件 | `collect --agent ... --task-file ...` |
-| 多框架、多模型、多次重复 | `experiment`，先加 `--dry-run` 预览 |
-| 自己操作网页 | `collect --manual` |
-
-所有命令在仓库根目录执行。一次任务执行称为一个 run；一个任务文件可以产生多个 run。
-
-## 单次采集
-
-```bash
-python -m agent_fingerprint collect \
-  --agent browseruse --model claude \
-  --task-file tasks/flights.jsonl --sandbox-directory sandbox/flights \
-  --site flights --collector semantic/v1 \
-  --timeout 900 --max-steps 100 --no-network-probe
-```
-
-默认输出到 `data/runs/<日期>/<run_id>/`，终端输出 `run_id`、`status`、`output_dir`、`manifest` 和错误信息。
-示例选择 Browser-use + claude，最多运行 900 秒或 100 步，并采集增强语义事件；它需要真实模型密钥和 Browser-use 环境。
-任务文件每行一个 JSON 对象，使用 `url`、`prompt` 字段，也兼容 `web`、`ques`：
-
-```json
-{"url": "/01-minimal.html", "prompt": "点击页面上的按钮"}
-```
-
-也可用 `--url /01-minimal.html --prompt '点击页面上的按钮'` 直接传任务。相对 URL 由本地网页服务提供，不能同时指定 `--url` 和 `--task-file`。
+## 单次采集参数
 
 | 常用参数 | 默认值 / 用途 |
 | --- | --- |
@@ -40,7 +11,6 @@ python -m agent_fingerprint collect \
 | `--task-file` | JSON/JSONL 任务文件；多条任务依次执行 |
 | `--url`、`--prompt` | 直接指定网页和任务；相对 URL 对应本地网页根目录 |
 | `--sandbox-directory` | 本地网页根目录；flights 使用 `sandbox/flights` |
-| `--collector` | 默认 `legacy/v2`；`semantic/v1` 额外采集语义解析需要的结构信息 |
 | `--timeout` | 单任务超时秒数；未指定时为 1800 |
 | `--max-steps` | 默认 100；Browser-use、Skyvern、AutoGen、Agent-E 的步数/轮数上限 |
 | `--max-iter` | 默认 100；WebVoyager 的迭代上限 |
@@ -55,30 +25,7 @@ python -m agent_fingerprint collect \
 `--config` 指定框架环境配置，`--gateway-config` 指定模型路由配置，默认均在 `configs/` 下。
 只替换一次运行的上游路由时，可加 `--upstream-model` 和 `--provider-key-env`。框架专用参数用 `collect --help` 查看。
 
-## 人工采集
-
-```bash
-python -m agent_fingerprint collect \
-  --manual --url /11-mouse-click.html --collector semantic/v1
-```
-
-命令会打开页面，按终端提示操作并结束。人工模式默认不启动模型网关，也不抓包。`--manual-no-open` 只打印 URL；`--manual-browser chromium` 指定浏览器。
-
-## 批量实验
-
-```bash
-# 先检查计划：2 个框架 × 1 个模型 × 2 个任务 × 3 次重复 = 12 条采集命令
-python -m agent_fingerprint experiment \
-  --agents browseruse,webvoyager --models claude \
-  --tasks flights,shop --repeats 3 --dry-run
-
-# 执行同一计划
-python -m agent_fingerprint experiment \
-  --agents browseruse,webvoyager --models claude \
-  --tasks flights,shop --repeats 3
-```
-
-若任务文件包含多条任务，每条采集命令还会依次执行文件中的任务。
+## 批量实验参数
 
 | 参数 | 说明 |
 | --- | --- |
@@ -91,7 +38,7 @@ python -m agent_fingerprint experiment \
 当前默认矩阵为 5 个框架 × 4 个模型 × 3 个任务 × 5 次重复，即 300 条采集命令。
 `--tasks forums` 是实验任务名，保存的数据网页标签为 `forum`；筛选数据时使用 `--sites forum`。
 
-超时、采集器、抓包等 `collect` 选项在实验 YAML 中配置，不直接传给 `experiment`。覆盖顺序：`defaults → task → agent → model → overrides`。
+超时、抓包等 `collect` 选项在实验 YAML 中配置，不直接传给 `experiment`。覆盖顺序：`defaults → task → agent → model → overrides`。
 当前默认矩阵关闭抓包、超时 900 秒，部分组合会覆盖该值。现有 `scripts/exp/` 等 Shell 脚本是组合快捷入口。
 
 常用任务与本地网页的对应关系：
@@ -108,8 +55,44 @@ python -m agent_fingerprint experiment \
 
 批量命令会自动带入这些路径。`bash scripts/run_experiment.sh ...` 与 `python -m agent_fingerprint experiment ...` 使用相同参数。
 
-## 去哪里看结果
+## 任务文件
 
-先看 `manifest.json` 中的状态与错误，再查 `logs/` 和 `artifacts/`。
-L3 原始事件位于 `fingerprints/l3_browser_dynamic.json`；运行状态为 success 不自动代表任务每个字段都正确，完成证据需结合页面和日志核对。
-目录与字段说明见[数据契约](data-contract.md)。
+任务文件每行一个 JSON 对象，使用 `url`、`prompt`，也兼容 `web`、`ques`：
+
+```json
+{"url": "/01-minimal.html", "prompt": "点击页面上的按钮"}
+```
+
+`--url` 与 `--task-file` 不能同时使用；相对 URL 由本地网页服务提供。一次任务执行是一个 run，任务文件有多行时会依次执行。
+
+## 上传与收尾
+
+自动采集结束后会等待 L3 上传进入短暂静默再导出，以免探针的批量上传晚于 Agent 进程退出；Browser-use 还会停止探针并将页面内存快照作为漏传事件的补充，与服务端已收事件按会话和序号去重合并。L3 中的 `browser_snapshot` 字段记录页面快照的 ACK、待上传数和上传错误，便于区分页面未产生事件与上传遗漏。
+
+## Skyvern + Qwen3.5 输出截断与超时
+
+Skyvern 的默认输出额度为 4096 token。若日志反复出现
+`LLMOutputTruncatedError`、`finish_reason=length, content=None`，会触发单步重试，
+最终可能耗尽 5 次重试或被实验总时限终止。
+
+项目的 Skyvern runner 对 `qwen3.5-*` 默认使用 JSON object 模式，向 vLLM 传递
+`chat_template_kwargs.enable_thinking=false`，并将输出额度设为 8192。
+这些参数仅作用于 Skyvern 的 Qwen3.5 请求。可通过以下环境变量覆盖：
+
+| 变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `SKYVERN_LLM_MAX_TOKENS` | Qwen3.5 为 `8192` | 正整数，单次模型输出额度 |
+| `SKYVERN_LLM_PROTOCOL` | Qwen3.5 为 `json`，其他模型为 `native` | `json` / `native` / `text` |
+| `SKYVERN_QWEN_ENABLE_THINKING` | `false` | Qwen3.5 的 vLLM 思考开关，`true` / `false` |
+| `SKYVERN_TASK_TIMEOUT` | `1800` | 默认实验配置中 Skyvern + qwen3.5-9b 的 flights/shop 总时限（秒） |
+
+先各重跑一次验证：
+
+```bash
+python -m agent_fingerprint experiment \
+  --agents skyvern --models qwen3.5-9b --tasks flights,shop --repeats 1
+```
+
+该超时覆盖作用于默认配置的 `experiment`；直接使用 `collect` 时通过 `--timeout 1800` 指定。
+没有提高每步重试次数。新参数不能保证网页任务必然成功；如果仍然超时，应检查具体失败动作。
+这些运行改变了思考模式、输出额度和超时条件，进行指纹对比时应区分修复前后的采集批次。

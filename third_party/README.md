@@ -1,6 +1,6 @@
 # 第三方框架源码与补丁
 
-[项目首页](../README.md) · [环境安装](../docs/setup.md)
+[项目首页](../README.md) · [环境安装](../docs/quickstart.md)
 
 这里记录外部框架的固定版本。框架源码由脚本恢复，不直接纳入主仓库；运行依赖安装在各框架自己的 Conda 环境。
 
@@ -23,5 +23,5 @@ python scripts/setup_third_party.py
 ```
 
 常用参数：`--dry-run` 只预览，`--root` 指定包含 `lock.json` 和补丁的目录（默认 `third_party`）。
-脚本保留已有 checkout，不负责更新、创建 Conda 环境或安装依赖。后续步骤见[安装指南](../docs/setup.md)。
+脚本保留已有 checkout，不负责更新、创建 Conda 环境或安装依赖。后续步骤见[安装指南](../docs/quickstart.md)。
 密钥和部署环境配置不进入补丁，排除项列在 `local_only_files`。更新框架时同步维护 commit、补丁及校验和，并运行对应适配器测试。

@@ -1,28 +1,29 @@
 # 命令与参数速查
 
-[文档导航](README.md) · [首次运行示例](../README.md#完整运行示例本地采集--提取--数据集)
+[文档导航](../README.md) · [首次运行示例](../quickstart.md#验证本地流程)
 
-以下命令在仓库根目录、已激活的主环境中执行。`af` 等价于 `python -m agent_fingerprint`。表中的 `<命令>` 等尖括号内容是占位符，执行前需替换。
+以下命令在仓库根目录、`conda activate agent-fingerprint` 后执行。`af` 等价于 `python -m agent_fingerprint`。表中的 `<命令>` 等尖括号内容是占位符，执行前需替换。
 
 ## 按目的选命令
 
 | 目的 | 入口 | 输入 → 输出 | 详细用法 |
 | --- | --- | --- | --- |
 | 跑一次任务 | `collect` | 任务 / URL → 原始运行目录 | [采集](collection.md) |
-| 跑多组组合 | `experiment` | 实验 YAML → 多次 collect 与报告 | [批量采集](collection.md#批量实验) |
-| 查看一份轨迹 | `extract` | L3 JSON → 98 维统计与语义动作 | [提取](semantic-actions.md) |
-| 准备训练数据 | `dataset` | 运行目录 → samples.json、quality.json | [数据](data-contract.md) |
-| 检查数据能否训练 | `attribution audit` | samples.json → 标签与长度报告 | [训练](attribution-training.md) |
-| 固定数据划分 | `attribution split` | samples.json → 划分文件 | [训练](attribution-training.md) |
-| 训练四种表示之一 | `attribution train` | 数据集 + 划分 → 模型、指标 | [训练](attribution-training.md) |
-| 重载模型复核 | `attribution evaluate` | 已训练实验 → 原划分上的指标 | [训练](attribution-training.md) |
-| 汇总多组实验 | `attribution aggregate` | 实验根目录 → tables.md | [训练](attribution-training.md) |
-| 诊断序列训练 | `attribution overfit / inspect` | 小样本拟合 / 检查模型输入 | [实现参考](reference/attribution-details.md) |
+| 跑多组组合 | `experiment` | 实验 YAML → 多次 collect 与报告 | [批量采集](../workflow.md#采集) |
+| 查看一份轨迹 | `extract` | run ID → 统计与语义；--input-file → 仅语义 | [提取](semantic-actions.md) |
+| 检查并过滤原始数据 | `python scripts/dataset_audit.py` | 运行目录 → 数量、L3 条数、任务状态；加 --filter 转移 | [数据审计](../workflow.md#检查与过滤) |
+| 准备训练数据 | `dataset` | 运行目录 → samples.json、quality.json | [数据](data.md) |
+| 检查数据能否训练 | `attribution audit` | samples.json → 标签与长度报告 | [训练](../workflow.md#训练与评估) |
+| 固定数据划分 | `attribution split` | samples.json → 划分文件 | [训练](../workflow.md#训练与评估) |
+| 训练四种表示之一 | `attribution train` | 数据集 + 划分 → 模型、指标 | [训练](../workflow.md#训练与评估) |
+| 重载模型复核 | `attribution evaluate` | 已训练实验 → 原划分上的指标 | [训练](../workflow.md#训练与评估) |
+| 汇总多组实验 | `attribution aggregate` | 实验根目录 → tables.md | [训练](../workflow.md#训练与评估) |
+| 诊断序列训练 | `attribution overfit / inspect` | 小样本拟合 / 检查模型输入 | [实现参考](training.md) |
 | 使用逻辑回归 | `train / test / predict / plot` | 特征 → 基线模型、预测与图表 | [基线](classification.md) |
-| 整理运行目录 | `prepare` | 运行目录 → 整理计划；加 --apply 执行 | [整理](data-contract.md#整理与修复按需执行) |
-| 单独整理或修复 | `organize / normalize / migrate` | 目录归类 / ID 同步 / v1 迁移 | [整理](data-contract.md#整理与修复按需执行) |
+| 整理运行目录 | `prepare` | 运行目录 → 整理计划；加 --apply 执行 | [整理](data.md#整理与修复按需执行) |
+| 单独整理或修复 | `organize / normalize / migrate` | 目录归类 / ID 同步 / v1 迁移 | [整理](data.md#整理与修复按需执行) |
 
-通常只需 `collect → dataset → attribution split → attribution train`。单份提取、目录整理和历史格式迁移都按需使用。
+常用命令的执行顺序见[工作流](../workflow.md)。单份提取、目录整理和历史格式迁移都按需使用。
 
 ## 容易混淆的参数
 

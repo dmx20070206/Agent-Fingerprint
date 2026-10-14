@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from urllib.request import ProxyHandler, Request, build_opener
 
+from agent_fingerprint.adapters.base_adapter import AgentResult
 from agent_fingerprint.adapters.manual_adapter import ManualAdapter
 from agent_fingerprint.collection.runner import PipelineRunner
 
@@ -259,6 +260,72 @@ class ManualAdapterTest(unittest.TestCase):
             )
             self.assertFalse(result.success)
             self.assertIn("browser trace finalization timed out", result.manifest["error"])
+
+    def test_pipeline_waits_for_late_automatic_trace_upload(self) -> None:
+        run_id = "automatic-late-upload"
+        workers: list[threading.Thread] = []
+
+        def post(endpoint: str, sequence: int) -> None:
+            request = Request(
+                endpoint,
+                data=json.dumps(
+                    {
+                        "protocol_version": 2,
+                        "run_id": run_id,
+                        "session_id": "browser-v2",
+                        "events": [{"seq": sequence, "type": "click"}],
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with build_opener(ProxyHandler({})).open(request, timeout=3) as response:
+                self.assertEqual(response.status, 200)
+
+        class DelayedUploadAdapter:
+            def run_task(self, url: str, _prompt: str, output_dir: Path) -> AgentResult:
+                endpoint = url.rsplit("/", 1)[0] + "/__agent_fingerprint__/events"
+                post(endpoint, 1)
+
+                def upload_final_event() -> None:
+                    time.sleep(0.2)
+                    post(endpoint, 2)
+
+                worker = threading.Thread(target=upload_final_event, daemon=True)
+                workers.append(worker)
+                worker.start()
+                return AgentResult(
+                    "fake",
+                    ("fake-agent",),
+                    Path(output_dir),
+                    0,
+                    "done",
+                    "",
+                    0.01,
+                    task_success=True,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner = PipelineRunner(
+                output_root=directory,
+                use_network_probe=False,
+                trace_grace_seconds=0.3,
+                trace_finalize_timeout_seconds=2,
+                adapter_factory={"fake": DelayedUploadAdapter},
+            )
+            result = runner.run_once(
+                "/mouse-click.html",
+                "click around",
+                agent_name="fake",
+                run_id=run_id,
+            )
+            workers[0].join(timeout=2)
+            dynamic = json.loads(
+                (result.output_dir / "fingerprints" / "l3_browser_dynamic.json").read_text(encoding="utf-8")
+            )
+
+            self.assertTrue(result.success, result.manifest)
+            self.assertEqual(dynamic["event_count"], 2)
 
 
 if __name__ == "__main__":  # pragma: no cover

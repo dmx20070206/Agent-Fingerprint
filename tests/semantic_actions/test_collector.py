@@ -1,4 +1,5 @@
 """Execute the composed collector against DOM event/state objects in Node."""
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -8,6 +9,7 @@ import pytest
 
 from agent_fingerprint.semantic_actions import parse_semantic_actions
 from agent_fingerprint.semantic_actions.collector import build_probe
+from agent_fingerprint.storage.metadata import collector_metadata
 
 
 def test_source_hook_drift_fails_loudly():
@@ -15,15 +17,12 @@ def test_source_hook_drift_fails_loudly():
         build_probe("unrelated source")
 
 
-def test_existing_sandbox_can_serve_composed_probe(tmp_path, monkeypatch):
+def test_sandbox_serves_enhanced_probe_by_default(tmp_path):
     import threading
     from urllib.request import build_opener, ProxyHandler
-    from agent_fingerprint.collection.sandbox import SandboxRequestHandler, MONITOR_SCRIPT_ENDPOINT, create_server
+    from agent_fingerprint.collection.sandbox import MONITOR_SCRIPT_ENDPOINT, create_server
 
-    path = tmp_path / "monitor.js"
     source = build_probe()
-    path.write_text(source)
-    monkeypatch.setattr(SandboxRequestHandler, "monitor_path", path)
     (tmp_path / "index.html").write_text("<html><head></head><body>fixture</body></html>")
     server = create_server(port=0, directory=tmp_path, inject_monitor=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -32,7 +31,12 @@ def test_existing_sandbox_can_serve_composed_probe(tmp_path, monkeypatch):
     opener = build_opener(ProxyHandler({}))
     try:
         with opener.open(base + MONITOR_SCRIPT_ENDPOINT, timeout=3) as response:
-            assert response.read().decode() == source
+            payload = response.read()
+            assert payload.decode() == source
+            assert collector_metadata() == {
+                "version": "semantic/v1",
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
         with opener.open(base + "/index.html", timeout=3) as response:
             assert MONITOR_SCRIPT_ENDPOINT in response.read().decode()
     finally:

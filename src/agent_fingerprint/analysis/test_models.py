@@ -25,7 +25,11 @@ def test_model(model_path, dataset_path, output_path):
     rows = data['samples']
     if not rows:
         raise ValueError('Test dataset is empty')
-    for key in ('run_id', 'raw_sha256', 'events_sha256'):
+    identity = lambda r: (r.get('site_label'), r.get('agent_label'), r.get('llm_label'), r.get('run_id'))
+    known_runs = {identity(r) for r in training['samples']}
+    if any(identity(r) in known_runs for r in rows):
+        raise ValueError('Train/test overlap detected by scoped run_id; use independent runs')
+    for key in ('raw_sha256', 'events_sha256'):
         known = {r[key] for r in training['samples'] if r.get(key)}
         if any(r.get(key) in known for r in rows):
             raise ValueError(f'Train/test overlap detected by {key}; use independent runs')

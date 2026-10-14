@@ -9,6 +9,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv-vllm/
+# Local upstream model weights (keep the directory guide).
+/models/*
+!/models/README.md
 .env
 .mypy_cache/
 .ruff_cache/

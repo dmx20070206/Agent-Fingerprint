@@ -39,8 +39,8 @@
   var FLUSH_DELAY_MS = 250;
   var UPLOAD_TIMEOUT_MS = 3000;
   var CONTROL_POLL_MS = 500;
-  // Keep individual keepalive/beacon bodies comfortably below the browser's
-  // shared ~64 KiB in-flight budget, even for events with a populated target.
+  // Bound work per request. Event count does NOT bound serialized byte size:
+  // enriched targets/composed paths can exceed the shared keepalive quota.
   var MAX_BATCH_EVENTS = 50;
   var PROTOCOL_VERSION = 2;
   var POINTER_MOVE_THROTTLE_MS = 16;
@@ -132,7 +132,11 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body,
-      keepalive: true
+      // Continuous uploads must not compete with completion/beacon requests
+      // for the shared 64 KiB keepalive budget. A rejected batch otherwise
+      // stalls the ACK cursor and every later event behind it. Page teardown
+      // has a separate best-effort beacon path below.
+      keepalive: false
     }).then(function (response) {
       if (!response.ok) throw new Error("trace collector returned " + response.status);
       return response.json();

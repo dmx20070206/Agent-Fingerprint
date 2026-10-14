@@ -23,6 +23,38 @@ model_list:
       api_base: https://bmapi.020212.xyz/v1
       api_key: os.environ/RELAY_GEMINI_API_KEY
 
+  # Local vLLM servers; public aliases also identify the collected LLM labels.
+  - model_name: qwen3.5-9b
+    litellm_params:
+      model: openai/qwen3.5-9b
+      api_base: http://127.0.0.1:8101/v1
+      api_key: os.environ/VLLM_API_KEY
+  - model_name: glm-4.6v-flash
+    litellm_params:
+      model: openai/glm-4.6v-flash
+      api_base: http://127.0.0.1:8102/v1
+      api_key: os.environ/VLLM_API_KEY
+  - model_name: qwen3.5-27b
+    litellm_params:
+      model: openai/qwen3.5-27b
+      api_base: http://127.0.0.1:8103/v1
+      api_key: os.environ/VLLM_API_KEY
+  - model_name: gemma-4-12b
+    litellm_params:
+      model: openai/gemma-4-12b
+      api_base: http://127.0.0.1:8104/v1
+      api_key: os.environ/VLLM_API_KEY
+  - model_name: ministral-3-8b
+    litellm_params:
+      model: openai/ministral-3-8b
+      api_base: http://127.0.0.1:8105/v1
+      api_key: os.environ/VLLM_API_KEY
+  - model_name: phi-4-multimodal
+    litellm_params:
+      model: openai/phi-4-multimodal
+      api_base: http://127.0.0.1:8106/v1
+      api_key: os.environ/VLLM_API_KEY
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 

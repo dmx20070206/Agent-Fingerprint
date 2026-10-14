@@ -9,7 +9,9 @@ from agent_fingerprint.modeling.splits import make_split
 from agent_fingerprint.modeling.training import TrainingConfig, train_experiment
 
 
-def test_all_eight_paths_export_comparable_results_and_tables(sessions, tmp_path):
+def test_all_eight_paths_export_comparable_results_and_tables(
+    sessions, tmp_path, capsys
+):
     manifest = make_split(sessions)
     base = TrainingConfig(epochs=2, batch_size=32, xgb_estimators=3)
     architecture = TransformerConfig(d_model=16, n_heads=2, num_layers=1, ffn_dim=32)
@@ -35,6 +37,30 @@ def test_all_eight_paths_export_comparable_results_and_tables(sessions, tmp_path
                 architecture,
             )
             paths.append(destination)
+            progress = capsys.readouterr()
+            assert not progress.out
+            assert f"target={target} seed=42" in progress.err
+            assert "train_loss=" in progress.err
+            assert "train_acc=" in progress.err
+            assert "val_acc=" in progress.err
+            assert "[train] Completed:" in progress.err
+            history = json.loads((destination / "training_log.json").read_text())
+            if representation == "stat98":
+                assert "[XGBoost] Round 3/3" in progress.err
+                error = "merror" if len(metrics["train"]["per_class"]) > 2 else "error"
+                for partition, key in [
+                    ("train", "validation_1"),
+                    ("val", "validation_0"),
+                ]:
+                    assert 1 - history[key][error][-1] == pytest.approx(
+                        metrics[partition]["accuracy"]
+                    )
+            else:
+                assert "[Transformer] Epoch 2/2" in progress.err
+                assert "Restored best epoch" in progress.err
+                assert all(0 <= e["train_accuracy"] <= 1 for e in history)
+                best = max(history, key=lambda e: e["val_macro_f1"])
+                assert best["val_accuracy"] == metrics["val"]["accuracy"]
             assert 0 <= metrics["test"]["macro_f1"] <= 1
             from agent_fingerprint.modeling.inference import evaluate_saved_experiment
 
@@ -168,6 +194,10 @@ def test_cli_full_cycle(dataset_file, tmp_path):
             prefix + arguments, capture_output=True, text=True, timeout=45, check=False
         )
         assert result.returncode == 0, result.stdout + result.stderr
+        if arguments[0] == "train":
+            assert "[Transformer] Epoch 1/1" in result.stderr
+            assert "train_loss=" in result.stderr
+            assert json.loads(result.stdout)["seed"] == 42
     inspection = json.loads((tmp_path / "inspect.json").read_text())
     assert len(inspection["batch"]["padding_mask"]) == 2
 
@@ -202,3 +232,33 @@ def test_best_checkpoint_uses_macro_f1_not_accuracy(sessions, monkeypatch):
     assert all(
         torch.equal(model.state_dict()[key], value) for key, value in states[1].items()
     )
+
+
+def test_seed_suppresses_only_old_cuda_driver_warning(monkeypatch):
+    import warnings
+
+    from agent_fingerprint.modeling import training
+
+    driver_warning = (
+        "CUDA initialization: The NVIDIA driver on your system is too old "
+        "(found version 12060)."
+    )
+
+    def cuda_available():
+        for message in [driver_warning, "Unrelated CUDA warning"]:
+            warnings.warn_explicit(
+                message,
+                UserWarning,
+                filename="torch/cuda/__init__.py",
+                lineno=228,
+                module="torch.cuda",
+            )
+        return False
+
+    monkeypatch.setattr(training.torch.cuda, "is_available", cuda_available)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        training.seed_everything(42)
+        assert [str(w.message) for w in caught] == ["Unrelated CUDA warning"]
+        cuda_available()
+        assert str(caught[1].message) == driver_warning

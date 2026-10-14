@@ -33,6 +33,12 @@ models:
   claude: {}
   gemini: {}
   deepseek-chat: {}
+  qwen3.5-9b: {}
+  glm-4.6v-flash: {}
+  qwen3.5-27b: {}
+  gemma-4-12b: {}
+  ministral-3-8b: {}
+  phi-4-multimodal: {}
 tasks:
   flights:
     task-file: tasks/flights.jsonl
@@ -77,3 +83,7 @@ overrides:
     timeout: ${BROWSER_USE_FLIGHTS_TIMEOUT:-3600}
   browseruse/deepseek-chat/flights:
     max-steps: 100
+  skyvern/qwen3.5-9b/flights:
+    timeout: ${SKYVERN_TASK_TIMEOUT:-1800}
+  skyvern/qwen3.5-9b/shop:
+    timeout: ${SKYVERN_TASK_TIMEOUT:-1800}

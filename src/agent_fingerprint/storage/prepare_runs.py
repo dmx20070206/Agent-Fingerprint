@@ -1,12 +1,16 @@
-"""Archive runs with globally unique short IDs; preview unless --apply is set."""
+"""Archive runs with short IDs local to each task/agent/model folder; preview unless --apply is set."""
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import tempfile
+from collections import defaultdict
 from pathlib import Path
 
 from .normalize_run_ids import normalize
+from .metadata import site_from_manifest
+from .run_store import iter_run_manifests
 
 
 def atomic_json(path, value):
@@ -19,21 +23,23 @@ def _prepare_legacy(root, *, apply=False, index=None):
     root = Path(root).resolve()
     if not root.is_dir():
         raise FileNotFoundError(root)
+    if any(root.glob('.prepare-*')):
+        raise ValueError('Unfinished preparation staging directory found; recover it before retrying')
     index = Path(index).resolve() if index else root / 'index.jsonl'
     history_path = root / 'run_names.json'
     history = json.loads(history_path.read_text(encoding='utf-8')) if history_path.exists() else []
-    manifests = sorted(root.rglob('manifest.json'))
+    manifests = sorted(iter_run_manifests(root))
+    run_directories = {manifest.parent for manifest in manifests}
     if not manifests:
         raise ValueError(f'No manifests found under {root}')
     empty_directories = []
     for directory in sorted(root.glob('*/*/*/*')):
-        if (root / directory.relative_to(root).parts[0] / 'manifest.json').is_file():
+        if any(parent in run_directories for parent in directory.parents):
             continue  # Nested framework artifacts belonging to a flat run.
         if directory.is_dir() and not (directory / 'manifest.json').exists():
             if any(directory.iterdir()):
                 raise ValueError(f'Nonempty run directory is missing manifest.json: {directory}')
             empty_directories.append(directory)
-    used = {entry['run_id'] for entry in history}
     existing = set()
     records = []
     for manifest in manifests:
@@ -45,37 +51,36 @@ def _prepare_legacy(root, *, apply=False, index=None):
                 raise ValueError(f'Unsafe directory label: {label!r}')
         parts = source.relative_to(root).parts
         if len(parts) == 4:
-            task, parent_agent, parent_model, _ = parts
+            _, parent_agent, parent_model, _ = parts
             if (parent_agent, parent_model) != (agent, model):
                 raise ValueError(f'Directory labels disagree with manifest: {source}')
-        elif len(parts) == 1:
-            match = re.search(r'_(flights|shop|forums?|keyboard|mouse_move|mouse_click|wheel_scroll)(?:_\d+)?$', source.name)
-            if not match:
-                raise ValueError(f'Cannot determine task: {source}')
-            task = {'forums': 'forum'}.get(match[1], match[1])
-        else:
-            raise ValueError(f'Expected flat or task/agent/model/run layout: {source}')
+        task = site_from_manifest(data, source)
+        if (not isinstance(task, str) or task == 'unknown'
+                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', task)):
+            raise ValueError(f'Cannot determine safe task/site; set manifest task.site: {source}')
         if re.fullmatch(r'run_\d{4,}', source.name):
-            if source.name in existing:
+            identity = (task, agent, model, source.name)
+            if identity in existing:
                 raise ValueError(f'Duplicate short run ID: {source.name}')
-            existing.add(source.name)
-            used.add(source.name)
+            existing.add(identity)
         records.append((source, data, task, agent, model))
 
-    number = max((int(name[4:]) for name in used if re.fullmatch(r'run_\d{4,}', name)), default=0)
+    # Existing numbered runs precede new acquisitions, in numeric order.
+    records.sort(key=lambda row: (row[2:],
+                 (0, int(row[0].name[4:])) if re.fullmatch(r'run_\d{4,}', row[0].name)
+                 else (1, str(row[0]))))
+    numbers = defaultdict(int)
     plans, entries, additions = [], [], []
     for source, data, task, agent, model in records:
-        if source.name in existing:
-            run_id = source.name
-        else:
-            number += 1
-            run_id = f'run_{number:04d}'
+        group = (task, agent, model)
+        numbers[group] += 1
+        run_id = f'run_{numbers[group]:04d}'
         target = root / task / agent / model / run_id
-        if target != source and target.exists():
+        if target != source and target.exists() and target not in run_directories:
             raise FileExistsError(target)
         entry = {'run_id': run_id, 'path': target.relative_to(index.parent).as_posix(),
                  'status': data.get('status'), 'started_at': data.get('started_at'),
-                 'agent': agent, 'model': model}
+                 'agent': agent, 'model': model, 'site': task}
         entries.append(entry)
         if target != source:
             change = {'source': source.relative_to(root).as_posix(),
@@ -87,22 +92,37 @@ def _prepare_legacy(root, *, apply=False, index=None):
     # Read and validate the index before making any changes. Preserve unrelated runs.
     previous = index.read_text(encoding='utf-8') if index.exists() else ''
     old_entries = [json.loads(line) for line in previous.splitlines() if line.strip()]
-    current = {entry['run_id']: entry for entry in old_entries}
-    updates = [entry for entry in entries if current.get(entry['run_id']) != entry]
-    id_changes = normalize(root, run_ids={str(source): target.name for source, target in plans}) if not apply else []
+    current = {entry['path']: entry for entry in old_entries}
+    updates = [entry for entry in entries if current.get(entry['path']) != entry]
+    retained = [entry for entry in old_entries
+                if not (index.parent / entry['path']).resolve().is_relative_to(root)]
+    new_entries = retained + entries
+    index_changed = old_entries != new_entries
+    id_changes = normalize(root, from_directory=True,
+                           run_ids={str(source): target.name for source, target in plans})
     if apply:
         # Persist the mapping first so an interrupted migration retains its provenance.
         if additions:
             atomic_json(history_path, history + additions)
-        for source, target in plans:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            source.rename(target)
+        # Stage every move before filling destinations, including occupied old IDs.
+        if plans:
+            staging = Path(tempfile.mkdtemp(prefix='.prepare-', dir=root))
+            atomic_json(staging / 'recovery.json', [
+                {'staged': str(number), 'source': str(source), 'destination': str(target)}
+                for number, (source, target) in enumerate(plans)])
+            for number, (source, target) in enumerate(plans):
+                source.rename(staging / str(number))
+            for number, (source, target) in enumerate(plans):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                (staging / str(number)).rename(target)
+            (staging / 'recovery.json').unlink()
+            staging.rmdir()
         id_changes = normalize(root, apply=True, from_directory=True)
         for directory in empty_directories:
             directory.rmdir()
-        if updates:
-            text = previous + ('\n' if previous and not previous.endswith('\n') else '')
-            text += ''.join(json.dumps(entry, ensure_ascii=False) + '\n' for entry in updates)
+        if index_changed:
+            index.parent.mkdir(parents=True, exist_ok=True)
+            text = ''.join(json.dumps(entry, ensure_ascii=False) + '\n' for entry in new_entries)
             temporary = index.with_name(index.name + '.tmp')
             temporary.write_text(text, encoding='utf-8')
             temporary.replace(index)
@@ -123,7 +143,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input-dir', type=Path, default=Path('data/runs/final'))
     parser.add_argument('--index', type=Path)
-    parser.add_argument('--legacy-short-ids', action='store_true', help='Opt-in legacy ID renumbering; records old/new mapping')
+    parser.add_argument('--short-ids', '--legacy-short-ids', dest='legacy_short_ids',
+                        action='store_true', help='Group by task/agent/model and number each group from run_0001; records old/new mapping')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()

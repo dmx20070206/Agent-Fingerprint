@@ -77,7 +77,21 @@ class SkyvernAdapter(BaseAgentAdapter):
         if self.max_steps is not None: updates["SKYVERN_MAX_STEPS"] = str(self.max_steps)
         if self.timeout is not None: updates["SKYVERN_TIMEOUT"] = str(self.timeout)
         updates.update(self.proxy_environment(self.proxy_url))
+        environment = self.merged_environment(updates)
+        if self.llm_api_base and (self.llm_model or "").rsplit("/", 1)[-1].lower().startswith("qwen3.5-"):
+            # The bundled Chromium 128 can acknowledge CDP input without
+            # retaining any text on this host. Use the matching cached Chrome
+            # already available locally, only in this agent/model child.
+            from .webvoyager_adapter import _matching_selenium_pair
+
+            explicit = environment.get("SKYVERN_CHROME_EXECUTABLE_PATH") or environment.get("CHROME_EXECUTABLE_PATH")
+            if explicit:
+                environment["SKYVERN_CHROME_EXECUTABLE_PATH"] = explicit
+            else:
+                pair = _matching_selenium_pair()
+                if pair:
+                    environment["SKYVERN_CHROME_EXECUTABLE_PATH"] = str(pair[0])
         secrets = tuple(value for value in (self.api_key, self.llm_api_key) if value)
         return self.execute(self.conda_command(["-c", _RUNNER]), output_dir=path,
-                            env=self.merged_environment(updates),
+                            env=environment,
                             redact_values=secrets)

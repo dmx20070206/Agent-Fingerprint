@@ -19,7 +19,7 @@ def paths(task_id, input_dir, output_dir, filename):
     source = root / "fingerprints" / filename
     if not source.is_file():
         source = root / filename  # compatibility with older runs
-    destination = Path(output_dir) / task_id / filename
+    destination = Path(output_dir) / root.relative_to(Path(input_dir).resolve()) / filename
     destination.parent.mkdir(parents=True, exist_ok=True)
     return source, destination
 

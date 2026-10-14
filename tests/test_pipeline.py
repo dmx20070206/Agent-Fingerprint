@@ -13,6 +13,7 @@ from agent_fingerprint.adapters.base_adapter import AgentInterruptedError, Agent
 from agent_fingerprint.collection.gateway.mock_openai import MockOpenAIGateway
 from agent_fingerprint.collection.runner import PipelineRunner
 from agent_fingerprint.collection.gateway.litellm_gateway import GatewayConfig
+from agent_fingerprint.collection.sandbox import TraceStore
 
 
 class FakeAdapter:
@@ -53,6 +54,42 @@ class FakeCapture:
 
 
 class PipelineTest(unittest.TestCase):
+    def test_browser_page_snapshot_recovers_events_missing_from_uploads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot_path = root / "browser_trace.json"
+            snapshot_path.write_text(json.dumps({
+                "session_id": "browser-session",
+                "event_count": 3,
+                "acknowledged_seq": 1,
+                "pending_event_count": 2,
+                "events": [
+                    {"seq": 1, "type": "monitor_start", "epoch_ms": 1},
+                    {"seq": 2, "type": "click", "epoch_ms": 2},
+                    {"seq": 3, "type": "input", "epoch_ms": 3},
+                ],
+            }), encoding="utf-8")
+            trace_store = TraceStore()
+            trace_store.receive({
+                "run_id": "browseruse-test",
+                "session_id": "browser-session",
+                "protocol_version": 2,
+                "events": [{"seq": 1, "type": "monitor_start", "epoch_ms": 1}],
+            })
+            runner = PipelineRunner(use_network_probe=False)
+            trace_path = runner._write_ui_trace(
+                root,
+                "browseruse-test",
+                trace_store,
+                browser_snapshot_path=snapshot_path,
+            )
+
+            trace = json.loads(trace_path.read_text(encoding="utf-8"))
+            self.assertEqual([event["type"] for event in trace["events"]], ["monitor_start", "click", "input"])
+            self.assertEqual(trace["event_count"], 3)
+            self.assertEqual(trace["browser_snapshot"]["pending_event_count"], 2)
+            self.assertEqual(trace["events"][1]["session_id"], "browser-session")
+
     def test_interaction_delay_is_validated(self):
         with self.assertRaisesRegex(ValueError, "interaction_delay_seconds"):
             PipelineRunner(use_network_probe=False, interaction_delay_seconds=-0.1)

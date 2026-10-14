@@ -1,4 +1,6 @@
-> 历史快照：保留整理前的目录、命令和实现说明。当前使用请看[项目首页](../../README.md)、[安装指南](../setup.md)或[文档导航](../README.md)。
+> 历史资料：内容与结果以记录时版本为准。当前操作见[工作流](../workflow.md)，其他历史材料见[归档索引](README.md)。
+
+> 历史快照：保留整理前的目录、命令和实现说明。当前使用请看[项目首页](../../README.md)、[安装指南](../quickstart.md)或[文档导航](../README.md)。
 
 # Agent-Fingerprint
 
@@ -524,7 +526,7 @@ python -m analysis.l3_browser_dynamic --task-id <run_id> --input-dir data/runs/f
 单次分析、数据集构建和 ID 修复都支持此分层结构，也可以指定某个任务或 Agent 子目录。
 
 支持 `--input-dir` 和 `--output-dir` 覆盖默认目录。L3 输出为 v3 的 58 维特征；
-数据集构建和分类训练见 [离线分类流程](docs/classification.md)。
+数据集构建和分类训练见 [离线分类流程](../reference/classification.md)。
 
 显式传入 `--output-dir` 时，默认拒绝复用非空目录，避免一次采集覆盖另一次采集；确认要复用时才加 `--overwrite`。不传该参数时，新运行写入 `--output-root/<日期>/<run_id>`。旧 v1 目录可先预览、再显式迁移：
 
@@ -656,7 +658,7 @@ Conda 环境解决的是“哪个依赖被加载”的问题，不提供权限�
 
 ## L3 离线分类
 
-特征提取、数据质量检查、Agent/LLM 共用训练入口、模型预测及测试说明见 [离线分类流程](docs/classification.md)。当前特征契约为 v3（58 维，缺失值为 null），详细定义见 [行为特征](docs/behavior_fingerprint_features.md)。
+特征提取、数据质量检查、Agent/LLM 共用训练入口、模型预测及测试说明见 [离线分类流程](../reference/classification.md)。当前特征契约为 v3（58 维，缺失值为 null），详细定义见 [行为特征](../reference/features.md)。
 
 ```bash
 bash scripts/run_analysis.sh prepare --dry-run  # 预览目录和 ID 整理

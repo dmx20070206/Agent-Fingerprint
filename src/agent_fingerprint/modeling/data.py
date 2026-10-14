@@ -180,7 +180,7 @@ def load_sessions(path):
         documents = documents or [None] * len(semantic)
         sessions.append(
             Session(
-                run_id,
+                row.get("sample_id") or str(source.resolve()),
                 *labels,
                 statistical,
                 event_tokens(raw),

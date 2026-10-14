@@ -27,7 +27,8 @@ def test_all_experiment_combinations_parse(monkeypatch):
     for key in ("AGENTE_FLIGHTS_TIMEOUT", "AUTOGEN_FLIGHTS_TIMEOUT", "BROWSER_USE_FLIGHTS_TIMEOUT"):
         monkeypatch.delenv(key, raising=False)
     config = yaml.safe_load((PROJECT_ROOT / "configs/experiments/default.yaml").read_text())
-    plan = build_plan(config, tasks=list(config["tasks"]), repeats=1)
+    plan = build_plan(config, agents=list(config["agents"]), models=list(config["models"]),
+                      tasks=list(config["tasks"]), repeats=1)
     parser = _build_parser()
     for row in plan:
         args = parser.parse_args(row["argv"])

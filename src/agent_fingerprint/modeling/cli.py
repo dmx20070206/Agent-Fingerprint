@@ -20,9 +20,7 @@ def boolean(value):
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
-    audit = commands.add_parser(
-        "audit", help="Inspect lengths, labels and random split feasibility"
-    )
+    audit = commands.add_parser("audit", help="Inspect lengths, labels and random split feasibility")
     audit.add_argument("--dataset", type=Path, required=True)
     audit.add_argument("--output", type=Path, required=True)
     split = commands.add_parser(
@@ -31,30 +29,22 @@ def parser():
     )
     split.add_argument("--dataset", type=Path, required=True)
     split.add_argument("--output", type=Path, required=True)
-    split.add_argument(
-        "--seed", type=int, default=42, help="Split seed; separate from model seeds"
-    )
+    split.add_argument("--seed", type=int, default=42, help="Split seed; separate from model seeds")
     split.add_argument("--val-fraction", type=float, default=0.2)
     split.add_argument("--test-fraction", type=float, default=0.2)
-    train = commands.add_parser(
-        "train", help="Train exactly one representation and one target"
-    )
+    train = commands.add_parser("train", help="Train exactly one representation and one target")
     train.add_argument("--dataset", type=Path, required=True)
     train.add_argument("--split-manifest", type=Path, required=True)
     train.add_argument("--output-dir", type=Path, required=True)
-    train.add_argument(
-        "--representation", choices=["stat98", "event", "semantic"], required=True
-    )
+    train.add_argument("--representation", choices=["stat98", "event", "semantic"], required=True)
     train.add_argument("--target", choices=["agent", "llm"], required=True)
-    train.add_argument(
-        "--semantic-mode", choices=["content", "timing"], default="content"
-    )
+    train.add_argument("--semantic-mode", choices=["content", "timing"], default="content")
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--seeds", type=int, nargs="+")
     for name, default in [
         ("batch-size", 16),
         ("epochs", 50),
-        ("early-stopping-patience", 8),
+        ("early-stopping-patience", 20),
         ("threads", 2),
         ("xgb-estimators", 200),
         ("xgb-max-depth", 4),
@@ -84,9 +74,7 @@ def parser():
     )
     train.add_argument("--class-weight", choices=["none", "balanced"], default="none")
     train.add_argument("--device", default="cpu")
-    overfit = commands.add_parser(
-        "overfit", help="Memorize 16–32 sessions; diagnostic only"
-    )
+    overfit = commands.add_parser("overfit", help="Memorize 16–32 sessions; diagnostic only")
     overfit.add_argument("--dataset", type=Path, required=True)
     overfit.add_argument("--output-dir", type=Path, required=True)
     overfit.add_argument("--target", choices=["agent", "llm"], default="agent")
@@ -99,9 +87,7 @@ def parser():
         action="store_true",
         help="Diagnostic only: select distinct content sequences to avoid contradictory identical inputs",
     )
-    inspect = commands.add_parser(
-        "inspect", help="Inspect samples/batches using saved preprocessing"
-    )
+    inspect = commands.add_parser("inspect", help="Inspect samples/batches using saved preprocessing")
     inspect.add_argument("--dataset", type=Path, required=True)
     inspect.add_argument("--checkpoint", type=Path, required=True)
     inspect.add_argument("--session-id", action="append", required=True)
@@ -114,9 +100,7 @@ def parser():
     evaluation.add_argument("--experiment-dir", type=Path, required=True)
     evaluation.add_argument("--output-dir", type=Path, required=True)
     evaluation.add_argument("--device", default="cpu")
-    summary = commands.add_parser(
-        "aggregate", help="Generate comparison and timing tables"
-    )
+    summary = commands.add_parser("aggregate", help="Generate comparison and timing tables")
     summary.add_argument("--input-dir", type=Path, required=True)
     summary.add_argument("--output-dir", type=Path, required=True)
     return result
@@ -130,17 +114,13 @@ def main():
             from .aggregate import aggregate
 
             result = aggregate(args.input_dir, args.output_dir)
-            print(
-                f"Aggregated {len(result)} cells into {args.output_dir / 'tables.md'}"
-            )
+            print(f"Aggregated {len(result)} cells into {args.output_dir / 'tables.md'}")
             return 0
         sessions = load_sessions(args.dataset)
         if args.command == "evaluate":
             from .inference import evaluate_saved_experiment
 
-            result = evaluate_saved_experiment(
-                sessions, args.experiment_dir, args.output_dir, device=args.device
-            )
+            result = evaluate_saved_experiment(sessions, args.experiment_dir, args.output_dir, device=args.device)
             print(json.dumps(result["test"], ensure_ascii=False, indent=2))
             return 0
         if args.command in {"audit", "split"}:
@@ -170,9 +150,7 @@ def main():
             from .models import TransformerConfig
             from .training import TrainingConfig, train_experiment
 
-            config = TrainingConfig(
-                **{f.name: getattr(args, f.name) for f in fields(TrainingConfig)}
-            )
+            config = TrainingConfig(**{f.name: getattr(args, f.name) for f in fields(TrainingConfig)})
             model_config = TransformerConfig(
                 **{
                     name: getattr(args, name)
@@ -190,9 +168,7 @@ def main():
                 raise ValueError("Duplicate model seeds are not allowed")
             manifest = read_json(args.split_manifest)
             for seed in seeds:
-                destination = (
-                    args.output_dir / f"seed_{seed}" if args.seeds else args.output_dir
-                )
+                destination = args.output_dir / f"seed_{seed}" if args.seeds else args.output_dir
                 result = train_experiment(
                     sessions,
                     manifest,
@@ -201,9 +177,7 @@ def main():
                     model_config,
                 )
                 print(
-                    json.dumps(
-                        {"seed": seed, "test": result["test"]}, ensure_ascii=False
-                    ),
+                    json.dumps({"seed": seed, "test": result["test"]}, ensure_ascii=False),
                     flush=True,
                 )
         elif args.command == "overfit":
@@ -230,9 +204,7 @@ def main():
                 raise ValueError("Requested session_id not found in dataset")
             selected = [by_id[sid] for sid in args.session_id]
             result = {
-                "samples": [
-                    inspect_sample(s, preprocessor, target, classes) for s in selected
-                ],
+                "samples": [inspect_sample(s, preprocessor, target, classes) for s in selected],
                 "batch": inspect_batch(selected, preprocessor, target, classes),
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)

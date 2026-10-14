@@ -71,6 +71,7 @@ class TraceStore:
         self._reliable_sessions: dict[str, set[str]] = {}
         self._finalize_requested: set[str] = set()
         self._finalized: dict[str, dict[str, int]] = {}
+        self._last_received_at: dict[str, float] = {}
 
     @staticmethod
     def _contiguous_seq(events: dict[int, dict[str, Any]]) -> int:
@@ -100,6 +101,7 @@ class TraceStore:
             protocol_version = 1
 
         with self._condition:
+            self._last_received_at[run_id] = time.monotonic()
             sessions = self._events.setdefault(run_id, {})
             events = sessions.setdefault(session_id, {})
             if protocol_version >= 2:
@@ -137,6 +139,28 @@ class TraceStore:
                 "finalize_requested": run_id in self._finalize_requested,
                 "finalized": session_id in self._finalized.get(run_id, {}),
             }
+
+    def wait_for_quiet(self, run_id: str, quiet_period: float, timeout: float) -> bool:
+        """Wait until no browser upload has arrived for ``quiet_period``."""
+
+        run_id = str(run_id)
+        quiet_period = max(0.0, quiet_period)
+        wait_started = time.monotonic()
+        deadline = wait_started + max(0.0, timeout)
+        with self._condition:
+            while True:
+                now = time.monotonic()
+                last_received = max(
+                    self._last_received_at.get(run_id, wait_started),
+                    wait_started,
+                )
+                quiet_remaining = quiet_period - (now - last_received)
+                if quiet_remaining <= 0:
+                    return True
+                timeout_remaining = deadline - now
+                if timeout_remaining <= 0:
+                    return False
+                self._condition.wait(min(quiet_remaining, timeout_remaining))
 
     def append(self, payload: dict[str, Any], default_run_id: str = "default") -> int:
         """Compatibility wrapper for callers that only need the added count."""
@@ -218,11 +242,13 @@ class TraceStore:
                 self._reliable_sessions.clear()
                 self._finalize_requested.clear()
                 self._finalized.clear()
+                self._last_received_at.clear()
             else:
                 self._events.pop(run_id, None)
                 self._reliable_sessions.pop(run_id, None)
                 self._finalize_requested.discard(run_id)
                 self._finalized.pop(run_id, None)
+                self._last_received_at.pop(run_id, None)
             self._condition.notify_all()
 
 
@@ -260,10 +286,6 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 class SandboxRequestHandler(http.server.SimpleHTTPRequestHandler):
     """Static-file handler with optional monitor injection and trace intake."""
 
-    # Resolve the probe from the repository rather than copying it into static.
-    collector_version = "legacy/v2"
-    monitor_path = PACKAGE_ROOT / "collection" / "probes" / "inject_monitor.js"
-
     def _send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -287,11 +309,8 @@ class SandboxRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         if parsed.path == MONITOR_SCRIPT_ENDPOINT:
             try:
-                if self.collector_version == "semantic/v1":
-                    from agent_fingerprint.semantic_actions.collector import build_probe
-                    body = build_probe().encode("utf-8")
-                else:
-                    body = self.monitor_path.read_bytes()
+                from agent_fingerprint.semantic_actions.collector import build_probe
+                body = build_probe().encode("utf-8")
             except OSError:
                 self._json_response({"error": "monitor script unavailable"}, 404)
                 return
@@ -467,7 +486,6 @@ def create_server(
     directory: Path | str = STATIC_DIR,
     *,
     trace_store: TraceStore | None = None,
-    collector_version: str = "legacy/v2",
     inject_monitor: bool = False,
     run_id: str = "default",
     interaction_delay_seconds: float = DEFAULT_INTERACTION_DELAY_SECONDS,
@@ -480,10 +498,7 @@ def create_server(
 
     if interaction_delay_seconds < 0:
         raise ValueError("interaction_delay_seconds cannot be negative")
-    if collector_version not in {"legacy/v2", "semantic/v1"}:
-        raise ValueError("Unsupported collector version")
     handler = create_handler(directory)
-    handler.collector_version = collector_version
     return ThreadingHTTPServer(
         (host, port),
         handler,

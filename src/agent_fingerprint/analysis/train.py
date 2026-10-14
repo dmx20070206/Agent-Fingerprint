@@ -63,7 +63,7 @@ def train(dataset_path, output_dir, target='agent', folds=5, seed=42, regulariza
         data = {**data, 'samples': rows}
 
     ids = [r['sample_id'] for r in rows]
-    if len(set(ids)) != len(ids) or len({r['run_id'] for r in rows}) != len(rows):
+    if len(set(ids)) != len(ids) or len({(r.get('site_label'), r['agent_label'], r['llm_label'], r['run_id']) for r in rows}) != len(rows):
         raise ValueError('Expected one unique sample per run')
     X = matrix(data, representation)
     if any(not isinstance(r.get(target + '_label'), str) or not r[target + '_label'].strip() for r in rows):

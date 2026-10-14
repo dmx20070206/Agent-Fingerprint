@@ -1,6 +1,6 @@
 # 浏览器行为指纹统计特征（v5）
 
-[文档导航](README.md) · [数据说明](data-contract.md)
+[文档导航](../README.md) · [数据说明](data.md)
 
 统计特征把一次完整运行概括成 98 个数值，例如点击数量、击键间隔和滚动距离。本文用于查询各列含义；日常提取只需下面的命令。
 
@@ -12,17 +12,17 @@
 
 ```bash
 python -m agent_fingerprint extract \
-  --input-file examples/semantic_actions/example_raw.json \
-  --output-file data/results/features_demo.json
+  --task-id RUN_ID --input-dir data/runs --output-dir data/results
 ```
 
-`--input-file` 指定原始事件，`--output-file` 指定结果。输出的 `existing_statistics` 包含 v5 统计，`feature_names` 与 `feature_vector` 一一对应；缺失值为 `null`，不等于 0。
-批量训练数据请使用 [dataset](data-contract.md)，无需逐个提取。语义动作输出说明见[语义指南](semantic-actions.md)。
+run ID 模式在 `data/results/RUN_ID/l3_browser_dynamic.json` 保存 v5 统计，`feature_names` 与 `feature_vector` 一一对应；缺失值为 `null`，不等于 0。同目录的 `semantic_actions.json` 只保存语义序列。`--input-file` 模式只提取语义序列，不生成统计特征。
+批量训练数据请使用 [dataset](data.md)，无需逐个提取。语义动作输出说明见[语义指南](semantic-actions.md)。
 
 | 常用参数 | 作用 |
 | --- | --- |
-| `--input-file` | 一份原始 L3 JSON 或事件数组 |
-| `--output-file` | 输出 JSON；本页示例保存在 data/results/ 下 |
+| `--task-id` | 要提取统计特征的 run ID |
+| `--input-dir`、`--output-dir` | 运行输入根目录、特征输出根目录 |
+| `--output-file` | 可选，仅覆盖语义序列输出路径，不改变统计文件路径 |
 | `--debug-output` | 可选，输出语义动作的识别过程；不是统计计算日志 |
 
 ## 统计语义

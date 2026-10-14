@@ -101,7 +101,6 @@ class PipelineRunner(ResourceFactories, ArtifactWriter):
         sandbox_directory: Path | str | None = None,
         start_sandbox: bool = True,
         inject_monitor: bool = True,
-        collector_version: str = "legacy/v2",
         gateway: LiteLLMGateway | None = None,
         gateway_config: GatewayConfig | Path | str | None = None,
         gateway_factory: Callable[..., Any] | None = None,
@@ -116,7 +115,7 @@ class PipelineRunner(ResourceFactories, ArtifactWriter):
         collect_l3: bool = True,
         collect_l4: bool = True,
         interaction_delay_seconds: float = 0.0,
-        trace_grace_seconds: float = 0.15,
+        trace_grace_seconds: float = 0.5,
         trace_finalize_timeout_seconds: float = 8.0,
         # Relay-backed LLM calls can legitimately take several minutes while
         # an upstream provider queues or retries a request.  Keep the parent
@@ -128,9 +127,6 @@ class PipelineRunner(ResourceFactories, ArtifactWriter):
         self.sandbox_directory = sandbox_directory
         self.start_sandbox = start_sandbox
         self.inject_monitor = inject_monitor
-        if collector_version not in {"legacy/v2", "semantic/v1"}:
-            raise ValueError("Unsupported collector version")
-        self.collector_version = collector_version
         self.gateway = gateway
         self.gateway_config = gateway_config
         self.gateway_factory = gateway_factory
@@ -168,7 +164,6 @@ class PipelineRunner(ResourceFactories, ArtifactWriter):
             port=0,
             directory=self.sandbox_directory or PROJECT_ROOT / "sandbox" / "static",
             trace_store=trace_store,
-            collector_version=self.collector_version,
             inject_monitor=self.inject_monitor and (self.collect_l2 or self.collect_l3),
             run_id=run_id,
             interaction_delay_seconds=self.interaction_delay_seconds,
@@ -468,14 +463,21 @@ class PipelineRunner(ResourceFactories, ArtifactWriter):
                     gateway.stop()
                 except BaseException as exc:
                     note_cleanup_failure("gateway stop failed", exc)
-            # Browser fetch(..., {keepalive:true}) may still be completing when
-            # the child exits.  Give the HTTP handler a short, configurable
-            # grace period before shutting down the collector.
+            # A page batches events after 250 ms (and scroll events are
+            # throttled separately). Wait for an idle interval, not merely a
+            # fixed delay, so a late upload restarts the drain period.
             if trace_store and self.trace_grace_seconds and not trace_finalization_attempted:
                 try:
-                    time.sleep(self.trace_grace_seconds)
+                    if not trace_store.wait_for_quiet(
+                        identifier,
+                        self.trace_grace_seconds,
+                        self.trace_finalize_timeout_seconds,
+                    ):
+                        cleanup_errors.append(
+                            "browser trace uploads did not become idle before export"
+                        )
                 except BaseException as exc:
-                    note_cleanup_failure("trace grace wait failed", exc)
+                    note_cleanup_failure("trace drain wait failed", exc)
             if (sandbox_started_here or self._sandbox_owned) and self._sandbox and not keep_sandbox:
                 try:
                     self.stop_sandbox_server()
@@ -494,7 +496,17 @@ class PipelineRunner(ResourceFactories, ArtifactWriter):
                 error = error or verification.reason
 
         try:
-            ui_trace = self._write_ui_trace(run_dir, identifier, trace_store)
+            browser_snapshot_path = (
+                Path(agent_result.output_dir) / "browser_trace.json"
+                if agent_name == "browseruse" and agent_result is not None
+                else None
+            )
+            ui_trace = self._write_ui_trace(
+                run_dir,
+                identifier,
+                trace_store,
+                browser_snapshot_path=browser_snapshot_path,
+            )
         except BaseException as exc:
             note_cleanup_failure("UI trace write failed", exc)
             status = "failed"
